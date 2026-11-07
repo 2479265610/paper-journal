@@ -3,15 +3,8 @@ name: Build Windows EXE
 on:
   push:
     branches: [main, master]
-    paths:
-      - 'desktop/**'
-      - 'index.html'
-      - 'manifest.webmanifest'
-      - 'sw.js'
-      - 'js/**'
-      - 'css/**'
-      - 'icons/**'
-      - '.github/workflows/exe.yml'
+    tags: ['v*']
+  workflow_dispatch:
   workflow_dispatch:
 
 permissions:
