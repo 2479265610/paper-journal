@@ -229,6 +229,62 @@
           fail('导入链路异常: ' + (err && err.message));
           report.errors.push(String(err && err.stack));
         }
+
+        /* ══ 原样 HTML 书：站点导入 + SW 虚拟文件系统 ══ */
+        try {
+          const Store = window.PJ.Store;
+
+          // 确保 SW 就绪并接管页面（?reset=1 会先注销 SW）
+          if ('serviceWorker' in navigator) {
+            try {
+              let reg = await navigator.serviceWorker.getRegistration();
+              if (!reg) reg = await navigator.serviceWorker.register('sw.js');
+              await navigator.serviceWorker.ready;
+              if (!navigator.serviceWorker.controller) {
+                await new Promise((r) => {
+                  navigator.serviceWorker.addEventListener('controllerchange', r, { once: true });
+                  setTimeout(r, 4000);
+                });
+              }
+            } catch (e) { /* SW 不可用时跳过路由断言 */ }
+          }
+
+          const fa = new File(
+            ['<html><head><title>原样书自检</title></head><body><h1>书架</h1><a href="vol-b.html">go</a></body></html>'],
+            'index.html', { type: 'text/html' });
+          const fb = new File(
+            ['<html><head><title>册一</title></head><body style="background:#e7f0e9"><h1>原样式保留</h1></body></html>'],
+            'vol-b.html', { type: 'text/html' });
+
+          const rs = await window.PJ.Importer.importSite([fa, fb], { nextCover: 1 });
+          check('HTML 站点原样成书', rs.type === 'site' && rs.files === 2 && rs.missing.length === 0,
+            JSON.stringify(rs));
+          const bk = (await Store.listBooks()).find(b => b.id === rs.bookId);
+          check('书架出现网页书', !!bk && bk.kind === 'html' && bk.title === '原样书自检');
+
+          const got = await Store.getRawFile(rs.bookId, 'vol-b.html');
+          check('子页原样保留', !!got && got.blob &&
+            (await got.blob.text()).includes('background:#e7f0e9'));
+
+          if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            const swResp = await fetch('/raw/' + rs.bookId + '/vol-b.html');
+            const swText = await swResp.text();
+            check('SW 虚拟路径可访问', swResp.ok && swText.includes('原样式保留'));
+            const swResp2 = await fetch('/raw/' + rs.bookId + '/');
+            check('SW 默认入口 index.html',
+              swResp2.ok && (await swResp2.text()).includes('go'));
+          } else {
+            log('swRaw', 'skipped（SW 未接管）');
+          }
+
+          await Store.delRawFiles(rs.bookId);
+          await Store.delBook(rs.bookId);
+          check('原样书测试已清理',
+            !(await Store.getRawFile(rs.bookId, 'index.html')));
+        } catch (err) {
+          fail('原样书链路异常: ' + (err && err.message));
+          report.errors.push(String(err && err.stack));
+        }
       }
     } catch (e) {
       fail('运行异常: ' + (e && e.message));

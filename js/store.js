@@ -6,7 +6,7 @@
 
   const { uid, dayKey, sha256 } = global.PJ;
   const DB_NAME = 'paper-journal';
-  const DB_VER = 1;
+  const DB_VER = 2;
 
   let db = null;
   const urlCache = new Map();   // mediaId -> objectURL
@@ -32,6 +32,10 @@
         }
         if (!d.objectStoreNames.contains('meta')) {
           d.createObjectStore('meta', { keyPath: 'k' });
+        }
+        if (!d.objectStoreNames.contains('rawFiles')) {
+          const r = d.createObjectStore('rawFiles', { keyPath: 'id' });
+          r.createIndex('bookId', 'bookId');
         }
       };
       req.onsuccess = () => { db = req.result; resolve(db); };
@@ -234,6 +238,30 @@
     async storageEstimate() {
       if (!navigator.storage || !navigator.storage.estimate) return null;
       try { return await navigator.storage.estimate(); } catch (e) { return null; }
+    },
+
+    /* ────────── 原样 HTML 书（raw site） ────────── */
+    /** rec: { id: `${bookId}/${path}`, bookId, path, blob, type, size } */
+    async putRawFile(rec) {
+      await req2p(tx('rawFiles', 'readwrite').objectStore('rawFiles').put(rec));
+      return rec;
+    },
+
+    async getRawFile(bookId, path) {
+      return req2p(tx('rawFiles').objectStore('rawFiles').get(`${bookId}/${path}`));
+    },
+
+    async listRawFiles(bookId) {
+      const r = await req2p(tx('rawFiles').objectStore('rawFiles').index('bookId').getAll(bookId));
+      return r || [];
+    },
+
+    async delRawFiles(bookId) {
+      const files = await this.listRawFiles(bookId);
+      const t = tx('rawFiles', 'readwrite');
+      files.forEach(f => t.objectStore('rawFiles').delete(f.id));
+      await new Promise((res, rej) => { t.oncomplete = res; t.onerror = () => rej(t.error); });
+      return files.length;
     },
 
     /** 全量导出数据 */

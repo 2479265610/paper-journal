@@ -55,7 +55,8 @@
     renderShelf();
     setView('shelf');
 
-    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    if ('serviceWorker' in navigator &&
+        (location.protocol.startsWith('http') || location.protocol === 'app:')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
     if (S.cfg.autoSync && Sync.configured) {
@@ -167,7 +168,8 @@
     dots.innerHTML = '';
 
     S.books.forEach((b, i) => {
-      const items = S.all.filter(e => e.bookId === b.id);
+      const isHtml = b.kind === 'html';
+      const items = isHtml ? [] : S.all.filter(e => e.bookId === b.id);
       const el = document.createElement('div');
       el.className = 'flow-item';
       el.dataset.id = b.id;
@@ -175,14 +177,15 @@
       el.innerHTML = `<div class="fi-face">
         <div class="fi-title">${escapeHtml(b.title)}</div>
         <div class="fi-bottom">
-          <span class="fi-count">${items.length} 页</span>
-          <span class="fi-date">${items.length ? relTime(items[0].updatedAt) : '空白本子'}</span>
+          <span class="fi-count">${isHtml ? (b.fileCount || 0) + ' 个文件' : items.length + ' 页'}</span>
+          <span class="fi-date">${isHtml ? '网页书 · 原样' : (items.length ? relTime(items[0].updatedAt) : '空白本子')}</span>
         </div>
       </div>`;
       el.querySelector('.fi-face').style.animationDelay = `${i * 55}ms`;
 
       el.addEventListener('click', () => {
         if (Date.now() - lastShelfDrag < 350) return;
+        if (b.kind === 'html') { openRawBook(b); return; }
         if (i === shelfIndex) openBook(b.id);
         else focusBook(i);
       });
@@ -290,12 +293,16 @@
     const b = S.books[shelfIndex];
     if (!b) return;
     if (S.books.length <= 1) { toast('至少保留一个日记本'); return; }
-    const n = S.all.filter(e => e.bookId === b.id).length;
+    const isHtml = b.kind === 'html';
+    const n = isHtml ? (b.fileCount || 0) : S.all.filter(e => e.bookId === b.id).length;
     const ok = await pickOption(
-      `删除「${b.title}」？${n ? `其中 ${n} 篇日记也会一并删除，不可恢复。` : ''}`,
+      isHtml
+        ? `删除网页书《${b.title}》？其中 ${n} 个文件将一并删除，不可恢复。`
+        : `删除「${b.title}」？${n ? `其中 ${n} 篇日记也会一并删除，不可恢复。` : ''}`,
       [{ label: '取消', value: 0 }, { label: '确认删除', value: 1 }]
     );
     if (!ok) return;
+    if (isHtml) await Store.delRawFiles(b.id);
     await Store.delBook(b.id);
     await refreshAll();
     shelfIndex = clamp(shelfIndex, 0, S.books.length - 1);
@@ -324,8 +331,27 @@
     c.hidden = true;
   }
 
+  /** 原样 HTML 书：全屏 iframe 打开（/raw/ 由 Service Worker 提供虚拟文件系统） */
+  function openRawBook(book) {
+    if (S.editing) { S.editing = false; $('#writerBar').hidden = true; }
+    const url = new URL(
+      '/raw/' + book.id + '/' + (book.entryPath ? encodeURI(book.entryPath) : 'index.html'),
+      location.href
+    ).href;
+    const v = $('#viewer');
+    const iframe = document.createElement('iframe');
+    iframe.src = url;
+    iframe.setAttribute('allow', 'fullscreen');
+    iframe.style.cssText = 'width:100%;height:100%;border:0;border-radius:6px;background:#fff';
+    $('#viewerBody').innerHTML = '';
+    $('#viewerBody').appendChild(iframe);
+    v.hidden = false;
+  }
+
   async function openBook(bookId) {
     const book = S.books.find(b => b.id === bookId);
+    if (book && book.kind === 'html') { openRawBook(book); return; }
+    const bookUsedForCover = book;
     S.bookId = bookId;
     S.entries = (await Store.listEntries({ bookId })).slice().reverse();  // 时间正序
     htmlCache.clear();
@@ -334,7 +360,7 @@
 
     if (S.entries.length) S.idx = S.entries.length - 1;
 
-    await showCover(book);
+    await showCover(bookUsedForCover);
     if (S.entries.length) await renderCurrent(true);
     else Flip.setPage(emptySheetHTML());
 
@@ -1119,31 +1145,72 @@
     $('#btnBookMore').onclick = renameBook;
     $('#btnBookDel').onclick = deleteBook;
 
-    // 导入：PDF → 一本新日记；HTML → 一篇新日记
-    const startImport = () => {
-      Sound.unlock();
-      PJ.Importer.onFile = (file) => {
-        PJ.Importer.importFiles(file, {
-          nextCover: S.books.length,
-          bookId: S.bookId || (S.books[0] && S.books[0].id)
-        }).then(async (r) => {
-          if (r.type === 'book') {
-            await refreshAll();
-            shelfIndex = Math.max(0, S.books.findIndex(b => b.id === r.bookId));
-            renderShelf();
-            toast(`已导入《${r.title}》· ${r.pages} 页`);
-            await openBook(r.bookId);
+    // 导入：PDF → 转成一本日记本；HTML → 原样成书（或转成一篇日记）
+    const doImportFile = (file) => {
+      PJ.Importer.importFiles(file, {
+        nextCover: S.books.length,
+        bookId: S.bookId || (S.books[0] && S.books[0].id)
+      }).then(async (r) => {
+        if (r.type === 'book') {
+          await refreshAll();
+          shelfIndex = Math.max(0, S.books.findIndex(b => b.id === r.bookId));
+          renderShelf();
+          toast(`已导入《${r.title}》· ${r.pages} 页`);
+          await openBook(r.bookId);
+        } else {
+          await refreshAll();
+          toast(`已导入为日记《${(r.entry.title || '网页').slice(0, 12)}》`);
+          await openEntry(r.entry);
+        }
+      }).catch((e) => {
+        console.warn('import fail', e);
+        toast('导入失败：' + (e.message || e).slice(0, 60));
+      });
+    };
+
+    const importSiteFlow = (files) => {
+      PJ.Importer.importSite(files, { nextCover: S.books.length })
+        .then(async (r) => {
+          await refreshAll();
+          shelfIndex = Math.max(0, S.books.findIndex(b => b.id === r.bookId));
+          renderShelf();
+          if (r.missing && r.missing.length) {
+            toast(`《${r.title}》已导入，但缺少被引用的文件：${r.missing.slice(0, 2).join('、')}${r.missing.length > 2 ? '…' : ''}`, 5000);
           } else {
-            await refreshAll();
-            toast(`已导入为日记《${(r.entry.title || '网页').slice(0, 12)}》`);
-            await openEntry(r.entry);
+            toast(`《${r.title}》已原样导入 · ${r.files} 个文件`);
           }
-        }).catch((e) => {
-          console.warn('import fail', e);
+          const b = S.books.find(x => x.id === r.bookId);
+          if (b) await openRawBook(b);
+        })
+        .catch((e) => {
+          console.warn('site import fail', e);
           toast('导入失败：' + (e.message || e).slice(0, 60));
         });
+    };
+
+    const startImport = () => {
+      Sound.unlock();
+      PJ.Importer.onFiles = async (files) => {
+        const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
+        const htmls = files.filter(f => /\.x?html?$/i.test(f.name) || /html/i.test(f.type || ''));
+        if (pdfs.length + htmls.length < files.length) { toast('仅支持 PDF 与 HTML 文件'); return; }
+        if (pdfs.length && htmls.length) { toast('PDF 和 HTML 请分开导入'); return; }
+        if (pdfs.length > 1) { toast('一次导入一个 PDF'); return; }
+        if (pdfs.length === 1) { doImportFile(pdfs[0]); return; }
+
+        if (htmls.length === 1) {
+          const choice = await pickOption(
+            `《${htmls[0].name}》怎么导入？`,
+            [
+              { label: '原样成书（推荐）', value: 'raw' },
+              { label: '转成一篇日记', value: 'entry' }
+            ]
+          );
+          if (choice === 'entry') { doImportFile(htmls[0]); return; }
+        }
+        importSiteFlow(htmls);
       };
-      PJ.Importer.pickImport();
+      PJ.Importer.pickImport(true);
     };
     $('#btnImport').onclick = startImport;
     $('#btnImportSetting').onclick = startImport;

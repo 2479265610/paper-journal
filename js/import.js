@@ -7,7 +7,7 @@
 (function (global) {
   'use strict';
 
-  const { Store, uid, dayKey, sanitize, toast } = global.PJ;
+  const { Store, uid, dayKey, sanitize, toast, fmtBytes } = global.PJ;
 
   /* ── 进度框 ── */
   function ipShow(title) {
@@ -195,20 +195,96 @@
     return { type: 'entry', entry: e };
   }
 
+  /* ── HTML 站点 → 原样成书（虚拟文件系统，保留全部样式与交互） ── */
+  function guessType(name) {
+    const ext = (name.match(/\.[a-z0-9]+$/i) || [''])[0].toLowerCase();
+    return ({
+      '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
+      '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
+      '.json': 'application/json; charset=utf-8',
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+      '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.mp3': 'audio/mpeg',
+      '.mp4': 'video/mp4', '.pdf': 'application/pdf'
+    })[ext] || 'application/octet-stream';
+  }
+
+  async function importSite(files, opts) {
+    opts = opts || {};
+    const arr = Array.from(files).filter(f => /\.(x?html?|css|js|json|png|jpe?g|gif|webp|svg|ico|woff2?|ttf|mp3|mp4|pdf|txt)$/i.test(f.name));
+    if (!arr.length) throw new Error('没有可导入的 HTML/资源文件');
+
+    ipShow('正在导入 HTML 书');
+
+    // 入口：index.html 优先
+    const entryFile = arr.find(f => /^index\.html?$/i.test(f.name)) ||
+                      arr.find(f => /\.x?html?$/i.test(f.name)) || arr[0];
+
+    // 解析入口引用的内部页面，提示缺失
+    let missing = [];
+    try {
+      const head = await entryFile.slice(0, Math.min(entryFile.size, 2 * 1024 * 1024)).text();
+      const refs = (head.match(/[\w\-. %\u4e00-\u9fa5]+\.html?(?![\w])/gi) || [])
+        .map(s => s.trim());
+      const names = new Set(arr.map(f => f.name));
+      missing = [...new Set(refs)].filter(u => !names.has(u));
+    } catch (e) { /* ignore */ }
+
+    const bookId = uid();
+    let done = 0;
+    for (const f of arr) {
+      ipUpdate(done / arr.length, `存入 ${f.name}（${(f.size / 1048576).toFixed(1)} MB）`);
+      // 让出主线程刷新进度
+      await new Promise(r => setTimeout(r, 0));
+      await Store.putRawFile({
+        id: bookId + '/' + f.name,
+        bookId,
+        path: f.name,
+        blob: f,
+        type: f.type || guessType(f.name),
+        size: f.size
+      });
+      done++;
+    }
+
+    // 标题：读入口 <title>
+    let title = entryFile.name.replace(/\.x?html?$/i, '');
+    try {
+      const text = await entryFile.text();
+      const m = text.match(/<title[^>]*>([^<]*)<\/title>/i);
+      if (m && m[1].trim()) title = m[1].trim().replace(/\s+/g, ' ').slice(0, 30);
+    } catch (e) { /* ignore */ }
+
+    const book = {
+      id: bookId,
+      title,
+      kind: 'html',
+      entryPath: entryFile.name,
+      cover: opts.nextCover || 0,
+      fileCount: arr.length,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await Store.putBook(book);
+    ipHide();
+    return { type: 'site', bookId, title, files: arr.length, missing };
+  }
+
   /* ── 文件选择器（供按钮调用） ── */
-  function pickImport() {
+  function pickImport(multiple) {
     const inp = document.createElement('input');
     inp.type = 'file';
+    inp.multiple = !!multiple;
     inp.accept = '.pdf,.htm,.html,application/pdf,text/html';
     inp.onchange = () => {
-      if (inp.files && inp.files[0] && Importer.onFile) {
-        Importer.onFile(inp.files[0]);
+      if (inp.files && inp.files.length && Importer.onFiles) {
+        Importer.onFiles(Array.from(inp.files));
       }
     };
     inp.click();
   }
 
-  const Importer = { importFiles, pickImport, onFile: null };
+  const Importer = { importFiles, importSite, pickImport, onFiles: null };
   global.PJ = global.PJ || {};
   global.PJ.Importer = Importer;
 })(window);

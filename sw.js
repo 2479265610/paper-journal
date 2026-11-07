@@ -1,6 +1,7 @@
 /* 纸间 · Service Worker
-   策略：network-first（保证更新即时生效），离线时回退缓存 */
-const CACHE = 'paper-journal-v2';
+   策略：network-first（保证更新即时生效），离线时回退缓存
+   特殊路由：/raw/<bookId>/<path> —— 原样 HTML 书的虚拟文件系统（从 IndexedDB 取文件） */
+const CACHE = 'paper-journal-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -33,11 +34,99 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+/* ══════════ 原样书虚拟文件系统 ══════════ */
+const RAW_MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.woff': 'font/woff',
+  '.ttf': 'font/ttf', '.mp3': 'audio/mpeg', '.mp4': 'video/mp4',
+  '.pdf': 'application/pdf', '.txt': 'text/plain; charset=utf-8'
+};
+
+let rawDbPromise = null;
+function rawDB() {
+  if (!rawDbPromise) {
+    rawDbPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open('paper-journal', 2);
+      req.onupgradeneeded = (e) => {
+        const d = e.target.result;
+        if (!d.objectStoreNames.contains('books'))
+          d.createObjectStore('books', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('entries')) {
+          const s = d.createObjectStore('entries', { keyPath: 'id' });
+          s.createIndex('bookId', 'bookId');
+          s.createIndex('day', 'day');
+          s.createIndex('ts', 'ts');
+          s.createIndex('updatedAt', 'updatedAt');
+        }
+        if (!d.objectStoreNames.contains('media')) {
+          const m = d.createObjectStore('media', { keyPath: 'id' });
+          m.createIndex('hash', 'hash');
+        }
+        if (!d.objectStoreNames.contains('meta'))
+          d.createObjectStore('meta', { keyPath: 'k' });
+        if (!d.objectStoreNames.contains('rawFiles')) {
+          const r = d.createObjectStore('rawFiles', { keyPath: 'id' });
+          r.createIndex('bookId', 'bookId');
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  return rawDbPromise;
+}
+
+async function serveRaw(pathname) {
+  try {
+    const rest = pathname.replace(/^\/raw\//, '');
+    const slash = rest.indexOf('/');
+    if (slash < 0) return new Response('bad raw path', { status: 400 });
+    const bookId = rest.slice(0, slash);
+    let p = decodeURIComponent(rest.slice(slash + 1));
+    if (p === '' || p.endsWith('/')) p += 'index.html';
+
+    const db = await rawDB();
+    const rec = await new Promise((resolve, reject) => {
+      const r = db.transaction('rawFiles').objectStore('rawFiles')
+        .get(bookId + '/' + p);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+
+    if (!rec || !rec.blob) {
+      return new Response('纸间：这本书里没有文件「' + p + '」',
+        { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }
+    const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
+    return new Response(rec.blob, {
+      headers: {
+        'Content-Type': rec.type || RAW_MIME[ext] || 'application/octet-stream',
+        'Cache-Control': 'no-cache'
+      }
+    });
+  } catch (e) {
+    return new Response('raw error: ' + e.message, { status: 500 });
+  }
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
+
+  // 原样书：无论同源与否，只要路径是 /raw/ 就接管（必须在缓存逻辑之前）
+  if (url.pathname.startsWith('/raw/')) {
+    e.respondWith(serveRaw(url.pathname));
+    return;
+  }
+
   // WebDAV / 跨域请求一律直连，不干预
   if (url.origin !== self.location.origin) return;
 
