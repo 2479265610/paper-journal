@@ -187,12 +187,12 @@
 
   /* ══════════ 书架 ══════════ */
   const COVERS = [
-    'linear-gradient(150deg,#3c5a4e,#22352d)',
-    'linear-gradient(150deg,#6b3f34,#40241c)',
-    'linear-gradient(150deg,#3a4a63,#1f2a3b)',
-    'linear-gradient(150deg,#7a6540,#4a3c22)',
-    'linear-gradient(150deg,#5b4258,#372535)',
-    'linear-gradient(150deg,#4a4a4a,#282828)'
+    'linear-gradient(150deg,#a9dcbc 0%,#7cbe95 44%,#4f9670 100%)',
+    'linear-gradient(150deg,#b6d9c4 0%,#6aa87f 50%,#3f7a5b 100%)',
+    'linear-gradient(150deg,#9ecdb2 0%,#63a482 48%,#457a5f 100%)',
+    'linear-gradient(150deg,#c8d9b6 0%,#8fae74 50%,#5f7d4e 100%)',
+    'linear-gradient(150deg,#a7c8be 0%,#6d9b91 50%,#47706a 100%)',
+    'linear-gradient(150deg,#b8c9dc 0%,#7f9ab8 50%,#546c88 100%)'
   ];
 
   let shelfIndex = 0;
@@ -215,13 +215,27 @@
       el.innerHTML = `<i class="fi-shadow" aria-hidden="true"></i>
         <div class="fi-face">
           <i class="fi-spine" aria-hidden="true"></i>
-          <div class="fi-title">${escapeHtml(b.title)}</div>
-          <div class="fi-bottom">
-            <span class="fi-count">${isHtml ? (b.fileCount || 0) + ' 个文件' : items.length + ' 页'}</span>
-            <span class="fi-date">${isHtml ? '网页书 · 原样' : (items.length ? relTime(items[0].updatedAt) : '空白本子')}</span>
+          <b class="fi-frame" aria-hidden="true"></b>
+          <i class="fi-leaf tl" aria-hidden="true">🍃</i>
+          <i class="fi-leaf tr" aria-hidden="true">🌸</i>
+          <i class="fi-leaf bl" aria-hidden="true">🌼</i>
+          <i class="fi-leaf br" aria-hidden="true">🌿</i>
+          <div class="fi-center">
+            <div class="fi-name">${escapeHtml(b.title)}</div>
+            <div class="fi-flower">✿ ❀ ✿</div>
+            <div class="fi-range">${isHtml
+              ? '网页书 · 原样'
+              : (items.length ? `${items[items.length - 1].day.slice(5)} – ${items[0].day.slice(5)}` : '空白本子')}</div>
+            <div class="fi-count">${isHtml ? (b.fileCount || 0) + ' 个文件' : items.length + ' 页'}</div>
+          </div>
+          <div class="fi-grass" aria-hidden="true">
+            <i>🌿</i><i>🌱</i><i>🍃</i><i>🌿</i><i>🌱</i><i>🍃</i><i>🌿</i>
           </div>
         </div>`;
       el.style.setProperty('--fd', (-(i % 7) * 0.85).toFixed(2) + 's');
+      // 书名越长字号越小，保证竖排不溢出封面
+      const nl = (b.title || '').length;
+      el.style.setProperty('--fs-name', nl <= 2 ? '.15' : nl <= 4 ? '.118' : nl <= 6 ? '.095' : '.076');
 
       el.addEventListener('click', () => {
         if (Date.now() - lastShelfDrag < 350) return;

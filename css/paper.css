@@ -383,11 +383,15 @@ input, textarea { border: 0; background: none; outline: none; }
   z-index: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding: calc(var(--w) * .085) calc(var(--w) * .062) calc(var(--w) * .07) calc(var(--w) * .1);
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--w) * .12) calc(var(--w) * .08);
   color: #fdf8ee;
   border-radius: inherit;
   overflow: hidden;
+  background: radial-gradient(62% 46% at 50% 44%,
+    rgba(255, 255, 255, .12) 0%,
+    rgba(255, 255, 255, 0) 72%);
   transform-style: preserve-3d;
   animation:
     faceIn .55s cubic-bezier(.2, .82, .25, 1) backwards,
@@ -396,6 +400,107 @@ input, textarea { border: 0; background: none; outline: none; }
     var(--fd, 0s),
     calc(var(--fd, 0s) + .6s);
   will-change: transform;
+}
+
+/* 封面内框：一圈实线 + 一圈虚线（真书封面的压印框） */
+.fi-frame {
+  position: absolute;
+  inset: calc(var(--w) * .058) calc(var(--w) * .06);
+  border: 1px solid rgba(255, 255, 255, .46);
+  border-radius: 3px;
+  outline: 1px dashed rgba(255, 255, 255, .24);
+  outline-offset: calc(var(--w) * .022);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* 四角花草 */
+.fi-leaf {
+  position: absolute;
+  font-size: calc(var(--w) * .075);
+  line-height: 1;
+  opacity: .92;
+  pointer-events: none;
+  z-index: 2;
+  filter: drop-shadow(0 1px 3px rgba(25, 60, 40, .3));
+}
+.fi-leaf.tl { top: 7.5%; left: 9%; transform: rotate(-16deg); }
+.fi-leaf.tr { top: 7%; right: 9%; transform: rotate(14deg); }
+.fi-leaf.bl { bottom: 14%; left: 9%; transform: rotate(12deg); }
+.fi-leaf.br { bottom: 14%; right: 9%; transform: rotate(-12deg); }
+
+/* 中央：竖排书名 + 小花 + 日期范围 */
+.fi-center {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-height: 100%;
+}
+.fi-name {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  font-family: var(--font-serif);
+  font-size: calc(var(--w) * var(--fs-name, .15));
+  letter-spacing: .1em;
+  line-height: 1.12;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(24, 66, 44, .4), 0 0 18px rgba(255, 255, 255, .22);
+  max-height: 56%;
+  overflow: hidden;
+  user-select: none;
+}
+.fi-flower {
+  margin-top: calc(var(--w) * .055);
+  font-size: calc(var(--w) * .045);
+  letter-spacing: .3em;
+  color: rgba(255, 255, 255, .82);
+  text-shadow: 0 1px 4px rgba(24, 66, 44, .35);
+  user-select: none;
+}
+.fi-range {
+  margin-top: calc(var(--w) * .032);
+  font-size: calc(var(--w) * .043);
+  letter-spacing: .1em;
+  color: rgba(255, 255, 255, .9);
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgba(24, 66, 44, .35);
+}
+.fi-count {
+  margin-top: calc(var(--w) * .018);
+  font-size: calc(var(--w) * .036);
+  letter-spacing: .14em;
+  color: rgba(255, 255, 255, .62);
+}
+
+/* 底部草地：轻轻摇曳 */
+.fi-grass {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--w) * .14);
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  padding: 0 calc(var(--w) * .06) calc(var(--w) * .022);
+  font-size: calc(var(--w) * .052);
+  line-height: 1;
+  opacity: .8;
+  z-index: 2;
+  pointer-events: none;
+  background: linear-gradient(0deg, rgba(30, 78, 52, .16), transparent);
+}
+.fi-grass i {
+  font-style: normal;
+  display: block;
+  transform-origin: bottom center;
+  animation: grassSway 3.4s ease-in-out infinite;
+}
+.fi-grass i:nth-child(2n) { animation-delay: .5s; }
+.fi-grass i:nth-child(3n) { animation-delay: 1.1s; }
+@keyframes grassSway {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
 }
 @keyframes faceIn {
   from { opacity: 0; transform: translateY(12px); }

@@ -62,6 +62,10 @@
         !!document.querySelector('#btnNewBook') &&
         !!document.querySelector('#btnBookMore') &&
         !!document.querySelector('#btnBookDel'));
+      check('封面版式（竖排书名+内框+草地）',
+        !!document.querySelector('.flow-item .fi-name') &&
+        !!document.querySelector('.flow-item .fi-frame') &&
+        !!document.querySelector('.flow-item .fi-grass'));
       log('flowTransform', active && active.style.transform);
       log('flowTitle', (document.querySelector('#flowTitle') || {}).textContent);
 
