@@ -6,11 +6,16 @@
   'use strict';
 
   const { clamp } = global.PJ;
-  const DUR = 760;
+  const DUR = 740;
   const THRESHOLD = 0.26;
   const VELOCITY = 0.40;
 
-  const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  // 慢起 → 加速 → 缓落 → 末段 8% 轻微"拍落"回弹，模拟纸面落到书上的手感
+  const easeInOut = (t) => {
+    let p = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    if (t > 0.9) p += Math.sin(((t - 0.9) / 0.1) * Math.PI) * 0.018;
+    return p;
+  };
 
   class Flip {
     constructor(bookEl, opts) {

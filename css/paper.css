@@ -83,6 +83,12 @@ input, textarea { border: 0; background: none; outline: none; }
 
 ::selection { background: var(--accent-soft); color: var(--ink); }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 /* ─── 滚动条 ─── */
 *::-webkit-scrollbar { width: 6px; height: 6px; }
 *::-webkit-scrollbar-thumb { background: var(--ink-3); border-radius: 3px; opacity: .3; }
@@ -164,8 +170,47 @@ input, textarea { border: 0; background: none; outline: none; }
   user-select: none;
   -webkit-user-select: none;
 }
+/* 顶部氛围光：让书"浮"在空间里 */
+.shelf-stage::before {
+  content: "";
+  position: absolute;
+  top: -12%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 130%;
+  height: 62%;
+  background: radial-gradient(
+    50% 100% at 50% 0%,
+    color-mix(in srgb, var(--paper) 55%, transparent) 0%,
+    transparent 72%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+/* 地面接触阴影 */
+.shelf-stage::after {
+  content: "";
+  position: absolute;
+  bottom: calc(14% - 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 76%);
+  height: 34px;
+  border-radius: 50%;
+  background: radial-gradient(
+    50% 100% at 50% 50%,
+    rgba(40, 32, 18, .18),
+    transparent 72%
+  );
+  filter: blur(6px);
+  pointer-events: none;
+  z-index: 0;
+  transition: opacity .4s;
+}
+[data-theme="ink"] .shelf-stage::after { background: radial-gradient(50% 100% at 50% 50%, rgba(0,0,0,.5), transparent 72%); }
 
 .flow-head { text-align: center; margin-bottom: 26px; z-index: 3; }
+.flow-title, .flow-sub { transition: opacity .3s ease; }
 .flow-title {
   margin: 0;
   font-family: var(--font-serif);
@@ -204,7 +249,7 @@ input, textarea { border: 0; background: none; outline: none; }
   overflow: hidden;
   box-shadow: 0 14px 34px rgba(50, 40, 25, .22), 0 3px 9px rgba(50, 40, 25, .13);
   transition:
-    transform .62s cubic-bezier(.22, .82, .26, 1),
+    transform .58s cubic-bezier(.3, 1.06, .32, 1),
     box-shadow .45s ease,
     opacity .4s ease,
     filter .4s ease;
@@ -229,9 +274,54 @@ input, textarea { border: 0; background: none; outline: none; }
 .flow-item.active {
   box-shadow:
     0 0 0 3px rgba(255, 255, 255, .95),
-    0 0 34px rgba(255, 255, 255, .45),
+    0 0 34px rgba(255, 255, 255, .42),
     0 22px 54px rgba(50, 40, 25, .30),
     0 4px 14px rgba(50, 40, 25, .16);
+  animation: glowPulse 3.6s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, .95),
+      0 0 34px rgba(255, 255, 255, .40),
+      0 22px 54px rgba(50, 40, 25, .30),
+      0 4px 14px rgba(50, 40, 25, .16);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(255, 255, 255, .98),
+      0 0 48px rgba(255, 255, 255, .58),
+      0 26px 62px rgba(50, 40, 25, .34),
+      0 4px 16px rgba(50, 40, 25, .18);
+  }
+}
+
+/* 封面浮入（入场时 JS 设置 animationDelay） */
+.fi-face { animation: faceIn .55s cubic-bezier(.2, .82, .25, 1) backwards; }
+@keyframes faceIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 悬停扫光 */
+.fi-face::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    112deg,
+    transparent 34%,
+    rgba(255, 255, 255, .14) 46%,
+    rgba(255, 255, 255, .05) 52%,
+    transparent 64%
+  );
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+@media (hover: hover) {
+  .flow-item:hover { filter: brightness(1.05); }
+  .flow-item:hover .fi-face::after { transform: translateX(130%); transition: transform .85s ease; }
+  .flow-item:not(.active):hover { filter: brightness(1.09); }
 }
 
 .fi-face {
@@ -871,6 +961,11 @@ input, textarea { border: 0; background: none; outline: none; }
 }
 .tab svg { width: 20px; height: 20px; }
 .tab.active { color: var(--accent); }
+.tab.active svg { animation: tabPop .32s cubic-bezier(.2,.9,.25,1); }
+@keyframes tabPop {
+  from { transform: scale(.82); }
+  to { transform: scale(1); }
+}
 .tab.active::after {
   content: ""; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
   width: 15px; height: 2px; border-radius: 2px; background: var(--accent);

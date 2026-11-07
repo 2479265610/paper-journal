@@ -179,7 +179,7 @@
           <span class="fi-date">${items.length ? relTime(items[0].updatedAt) : '空白本子'}</span>
         </div>
       </div>`;
-      el.style.animationDelay = `${i * 40}ms`;
+      el.querySelector('.fi-face').style.animationDelay = `${i * 55}ms`;
 
       el.addEventListener('click', () => {
         if (Date.now() - lastShelfDrag < 350) return;
@@ -229,9 +229,25 @@
     });
 
     const b = S.books[shelfIndex];
-    $('#flowTitle').textContent = b ? b.title : '书架';
-    const n = b ? S.all.filter(e => e.bookId === b.id).length : 0;
-    $('#flowSub').textContent = b ? `${n} 页` : '还没有日记本';
+    const titleEl = $('#flowTitle');
+    const subEl = $('#flowSub');
+    const newTitle = b ? b.title : '书架';
+    const newSub = b
+      ? `${S.all.filter(e => e.bookId === b.id).length} 页`
+      : '还没有日记本';
+    if (titleEl.textContent !== newTitle) {
+      titleEl.style.opacity = '0';
+      subEl.style.opacity = '0';
+      clearTimeout(layoutFlow._tt);
+      layoutFlow._tt = setTimeout(() => {
+        titleEl.textContent = newTitle;
+        subEl.textContent = newSub;
+        titleEl.style.opacity = '1';
+        subEl.style.opacity = '1';
+      }, 130);
+    } else {
+      subEl.textContent = newSub;
+    }
 
     $$('#flowDots i').forEach((d, i) => d.classList.toggle('on', i === shelfIndex));
   }

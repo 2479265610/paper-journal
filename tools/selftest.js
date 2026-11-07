@@ -101,10 +101,11 @@
         }
 
         // 主题切换
+        const themeBefore = app.dataset.theme;
         document.querySelector('#btnTheme').click();
         await new Promise(r => setTimeout(r, 300));
         log('themeAfterCycle', app.dataset.theme);
-        check('主题可切换', app.dataset.theme !== 'paper');
+        check('主题可切换', app.dataset.theme !== themeBefore);
       }
     } catch (e) {
       fail('运行异常: ' + (e && e.message));
