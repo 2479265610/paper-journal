@@ -13,6 +13,13 @@
  */
 
 import http from 'node:http';
+import fs from 'node:fs';
+
+/** 日记写作规则（来自 MaiBot diary_plugin 的 prompt 规则），可被用户直接编辑 */
+const GUIDE_PATH = new URL('./diary-style.md', import.meta.url);
+function readGuide() {
+  try { return fs.readFileSync(GUIDE_PATH, 'utf8'); } catch { return ''; }
+}
 
 const API_BASES = process.env.PJ_API
   ? [process.env.PJ_API]
@@ -110,8 +117,13 @@ function md2html(md) {
 /* ── MCP 工具定义 ── */
 const TOOLS = [
   {
+    name: 'get_diary_guide',
+    description: '获取这本日记的写作规则（体裁、内容取舍、文风、篇幅、人设、时机）。写日记前先调用它，然后严格按规则写。',
+    inputSchema: { type: 'object', properties: {} }
+  },
+  {
     name: 'write_diary',
-    description: '在纸间写一篇日记。body_markdown 支持 # 标题、**粗体**、*斜体*、- 列表、> 引用、``` 代码块。写完后立刻出现在用户的日记本里。',
+    description: '在纸间写一篇日记。写之前先调用 get_diary_guide 拿到写作规则（睡前随手写、第一人称、口语平淡、300-600 字、不用流水账）。body_markdown 支持 # 标题、**粗体**、*斜体*、- 列表、> 引用、``` 代码块。写完后立刻出现在用户的日记本里。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -186,6 +198,12 @@ const TOOLS = [
 async function callTool(name, args) {
   args = args || {};
   switch (name) {
+    case 'get_diary_guide': {
+      const guide = readGuide();
+      return guide
+        ? guide
+        : '（未找到 diary-style.md，按以下默认规则写：睡前随手写的私人日记；第一人称；口语平淡、句子短；300-600 字；只写真实感受不写流水账；不加前后缀和表情。）';
+    }
     case 'write_diary': {
       const r = await api('entries.write', {
         title: args.title || '',
