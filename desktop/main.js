@@ -7,6 +7,7 @@
 const { app, BrowserWindow, ipcMain, protocol, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const nodeHttp = require('node:http');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -155,6 +156,77 @@ function davRequest(payload) {
   });
 }
 
+/* ── AI 桥（MCP 数据代理）：mcp-server.mjs → HTTP → IPC → 渲染进程 ── */
+const pendingOps = new Map();
+let opSeq = 0;
+
+function startApiServer() {
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' };
+  const handler = (req, res) => {
+    const u = new URL(req.url, 'http://x');
+    if (u.pathname === '/api/ping') {
+      res.writeHead(200, cors);
+      res.end(JSON.stringify({ ok: true, agent: 'paper-journal-desktop', ts: Date.now() }));
+      return;
+    }
+    if (u.pathname === '/api/op') {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        let payload;
+        try { payload = JSON.parse(body); } catch (e) { }
+        if (!payload || !payload.op) {
+          res.writeHead(400, cors);
+          res.end(JSON.stringify({ ok: false, error: '缺少 op' }));
+          return;
+        }
+        const w = BrowserWindow.getAllWindows()[0];
+        if (!w || w.isDestroyed()) {
+          res.writeHead(503, cors);
+          res.end(JSON.stringify({ ok: false, error: '窗口未就绪' }));
+          return;
+        }
+        const id = 'op' + (++opSeq) + '-' + Date.now();
+        const timer = setTimeout(() => {
+          if (pendingOps.has(id)) {
+            pendingOps.delete(id);
+            res.writeHead(504, cors);
+            res.end(JSON.stringify({ ok: false, error: '执行超时' }));
+          }
+        }, 15000);
+        pendingOps.set(id, {
+          resolve: (r) => {
+            clearTimeout(timer);
+            res.writeHead(r.ok ? 200 : 500, cors);
+            res.end(JSON.stringify(r));
+          }
+        });
+        w.webContents.send('pj-op', { id, op: payload.op, args: payload.args || {} });
+      });
+      return;
+    }
+    res.writeHead(404, cors);
+    res.end(JSON.stringify({ ok: false, error: 'not found' }));
+  };
+
+  const tryListen = (port, left) => {
+    const srv = nodeHttp.createServer(handler);
+    srv.on('error', () => {
+      if (left > 0) tryListen(port + 1, left - 1);
+      else console.error('[desktop] AI 桥端口被占用，MCP 不可用');
+    });
+    srv.listen(port, '127.0.0.1', () => {
+      console.log('[desktop] AI 桥已监听 http://127.0.0.1:' + port + '（MCP：node mcp-server.mjs）');
+    });
+  };
+  tryListen(8787, 2);
+}
+
+ipcMain.on('pj-op-result', (_e, r) => {
+  const p = pendingOps.get(r && r.id);
+  if (p) { pendingOps.delete(r.id); p.resolve(r); }
+});
+
 /* ── 单实例锁 ── */
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -196,6 +268,7 @@ if (!gotLock) {
     }));
 
     createWindow();
+    startApiServer();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();

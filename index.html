@@ -298,6 +298,14 @@ if (location.search.indexOf('reset') >= 0) {
       </details>
 
       <details>
+        <summary>AI 助手（MCP）</summary>
+        <div class="sync-state" id="aiState">检测中…</div>
+        <p class="hint">在支持 MCP 的 AI 客户端（WorkBuddy / Claude Desktop / Cursor）里添加服务器：<br>
+        <code>node &lt;纸间目录&gt;/mcp-server.mjs</code><br>
+        之后就可以直接让 AI 替你写日记、查日记、做统计。使用时请保持纸间打开——数据始终在本机，AI 是通过这条本地通道进来的。</p>
+      </details>
+
+      <details>
         <summary>关于</summary>
         <p class="hint">纸间 v1.0 · 本地优先。数据默认只存在本机 IndexedDB，只有你点「同步」时才会上传到你自己的 WebDAV。</p>
         <p class="hint" id="storageInfo"></p>
@@ -352,6 +360,7 @@ if (location.search.indexOf('reset') >= 0) {
 <script src="js/flip.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/import.js"></script>
+<script src="js/aibridge.js"></script>
 <script src="js/app.js"></script>
 <script>
 /* 自检入口：?selftest=1 时把运行时状态回传服务器 */

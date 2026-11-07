@@ -59,6 +59,31 @@
         (location.protocol.startsWith('http') || location.protocol === 'app:')) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
     }
+
+    // AI 桥（MCP 数据代理执行端）
+    if (window.PJ && window.PJ.AI && window.PJ.AI.init) window.PJ.AI.init();
+    window.addEventListener('pj-ai-ready', (ev) => {
+      const st = $('#aiState');
+      if (st) {
+        const m = ev.detail && ev.detail.mode;
+        st.className = 'sync-state ok';
+        st.textContent = m === 'ipc'
+          ? '桌面版 AI 桥已就绪（本机通道，MCP 可连接）'
+          : m === 'sse'
+            ? 'AI 桥已连接（网页模式，MCP 可连接）'
+            : 'AI 桥未启用';
+      }
+    });
+    // AI 写入数据后刷新界面
+    window.addEventListener('pj-data-changed', debounce(async () => {
+      await refreshAll();
+      if (S.view === 'shelf') renderShelf();
+      else if (S.view === 'timeline') renderTimeline();
+      else if (S.view === 'calendar') renderCalendar();
+      else if (S.view === 'gallery') renderGallery();
+      else if (S.view === 'reader' && !S.editing) { htmlCache.clear(); await renderCurrent(false); }
+      updateSub();
+    }, 250));
     if (S.cfg.autoSync && Sync.configured) {
       autoSyncTimer = setInterval(() => doSync(true), 10 * 60 * 1000);
       setTimeout(() => doSync(true), 4000);

@@ -6,5 +6,8 @@ contextBridge.exposeInMainWorld('PJDesktop', {
   davRequest: (payload) => ipcRenderer.invoke('pj:dav', payload),
   /** 运行环境信息 */
   info: () => ipcRenderer.invoke('pj:info'),
+  /** AI 桥：主进程转来的 MCP 操作 */
+  onOp: (cb) => ipcRenderer.on('pj-op', (_e, payload) => cb(payload)),
+  opResult: (r) => ipcRenderer.send('pj-op-result', r),
   isDesktop: true
 });

@@ -168,6 +168,108 @@ async function serveStatic(req, res) {
   }
 }
 
+/* ══════════ AI 桥（MCP 数据代理） ══════════
+   MCP server 收到工具调用后经 /api/op 转发，
+   由打开了纸间页面的浏览器通过 SSE 领取并执行（数据在它的 IndexedDB 里）。 */
+const bridgeClients = new Set();     // SSE 响应对象集合
+let opSeq = 0;
+const pendingOps = new Map();        // id -> {resolve, timer}
+
+function bridgeBroadcast(op, args) {
+  const id = 'op' + (++opSeq) + '-' + Date.now();
+  const payload = JSON.stringify({ id, op, args });
+  let delivered = false;
+  for (const res of bridgeClients) {
+    try {
+      res.write(`event: op\ndata: ${payload}\n\n`);
+      delivered = true;
+      break;                          // 一个执行者即可
+    } catch { bridgeClients.delete(res); }
+  }
+  return delivered ? id : null;
+}
+
+function handleApi(req, res, u) {
+  const cors = { 'Access-Control-Allow-Origin': '*', 'Content-Type': 'application/json; charset=utf-8' };
+
+  if (u.pathname === '/api/ping') {
+    res.writeHead(200, cors);
+    res.end(JSON.stringify({ ok: true, agent: 'paper-journal-web', mode: bridgeClients.size ? 'bridged' : 'no-browser', ts: Date.now() }));
+    return;
+  }
+
+  if (u.pathname === '/bridge/events') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write(': connected\n\n');
+    bridgeClients.add(res);
+    const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch { /* */ } }, 20000);
+    req.on('close', () => { clearInterval(ping); bridgeClients.delete(res); });
+    return;
+  }
+
+  if (u.pathname === '/bridge/response') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      try {
+        const { id, ok, data, error } = JSON.parse(body);
+        const p = pendingOps.get(id);
+        if (p) {
+          clearTimeout(p.timer);
+          pendingOps.delete(id);
+          if (ok) p.resolve({ ok: true, data });
+          else p.resolve({ ok: false, error: error || '执行失败' });
+        }
+      } catch { /* ignore */ }
+      res.writeHead(204, { 'Access-Control-Allow-Origin': '*' });
+      res.end();
+    });
+    return;
+  }
+
+  if (u.pathname === '/api/op') {
+    let body = '';
+    req.on('data', c => body += c);
+    req.on('end', () => {
+      let op, args;
+      try { ({ op, args } = JSON.parse(body)); } catch { }
+      if (!op) {
+        res.writeHead(400, cors);
+        res.end(JSON.stringify({ ok: false, error: '缺少 op' }));
+        return;
+      }
+      const id = bridgeBroadcast(op, args);
+      if (!id) {
+        res.writeHead(503, cors);
+        res.end(JSON.stringify({ ok: false, error: '纸间页面未连接（请打开纸间网页或桌面应用）' }));
+        return;
+      }
+      const timer = setTimeout(() => {
+        if (pendingOps.has(id)) {
+          pendingOps.delete(id);
+          res.writeHead(504, cors);
+          res.end(JSON.stringify({ ok: false, error: '执行超时' }));
+        }
+      }, 15000);
+      pendingOps.set(id, {
+        resolve: (r) => {
+          res.writeHead(r.ok ? 200 : 500, cors);
+          res.end(JSON.stringify(r));
+        }
+      });
+    });
+    return;
+  }
+
+  res.writeHead(404, cors);
+  res.end(JSON.stringify({ ok: false, error: 'unknown api path' }));
+}
+
 /* ══════════ 启动 ══════════ */
 // PNG 图标不入库（.gitignore），首次启动自动生成
 async function ensureIcons() {
@@ -211,6 +313,12 @@ const server = http.createServer((req, res) => {
     console.log('\n[SELFTEST] ' + msg + '\n');
     res.writeHead(204, { 'Access-Control-Allow-Origin': '*' });
     res.end();
+    return;
+  }
+
+  // AI 桥（MCP 数据代理）
+  if (u.startsWith('/api/') || u.startsWith('/bridge/')) {
+    handleApi(req, res, new URL(u, 'http://x'));
     return;
   }
 
