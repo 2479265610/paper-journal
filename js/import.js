@@ -121,7 +121,21 @@
       cv.height = Math.floor(vp.height);
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, cv.width, cv.height);
-      await withTimeout(page.render({ canvasContext: ctx, viewport: vp }).promise, 90000, `渲染第 ${i} 页`);
+
+      // 渲染偶发不返回（pdf.js 内部消息丢失），超时后重试一次，实测可靠
+      const renderOnce = () =>
+        withTimeout(page.render({ canvasContext: ctx, viewport: vp }).promise, 40000, `渲染第 ${i} 页`);
+      try {
+        await renderOnce();
+      } catch (err) {
+        if (/超时/.test(err.message)) {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, cv.width, cv.height);
+          await renderOnce();
+        } else {
+          throw err;
+        }
+      }
 
       const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
       const m = await Store.putMedia(new File([blob], `page-${i}.jpg`, { type: 'image/jpeg' }));

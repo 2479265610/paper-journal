@@ -149,6 +149,7 @@ input, textarea { border: 0; background: none; outline: none; }
 }
 #app[data-view="shelf"]    #viewShelf,
 #app[data-view="reader"]   #viewReader,
+#app[data-view="raw"]      #viewRaw,
 #app[data-view="timeline"] #viewTimeline,
 #app[data-view="calendar"] #viewCalendar,
 #app[data-view="gallery"]  #viewGallery,
@@ -399,6 +400,21 @@ input, textarea { border: 0; background: none; outline: none; }
   color: var(--ink-3);
   opacity: .65;
 }
+
+/* ══════════ 网页书（原样沉浸视图） ══════════ */
+#app[data-view="raw"] #viewRaw { display: flex; flex-direction: column; }
+.raw-wrap {
+  flex: 1; min-height: 0;
+  display: flex;
+  background: var(--paper);
+}
+#rawFrame {
+  flex: 1; width: 100%; border: 0;
+  background: transparent;
+}
+#app[data-view="raw"] .fab,
+#app[data-view="raw"] .writer-bar { opacity: 0; pointer-events: none; }
+#app[data-view="raw"] .tabbar .tab { color: var(--ink-3); }
 
 /* ══════════ 书 / 翻页舞台 ══════════ */
 #viewReader { align-items: center; justify-content: center; padding: 0 16px; }

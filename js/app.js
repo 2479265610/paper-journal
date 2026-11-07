@@ -104,9 +104,22 @@
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === v));
 
     const back = $('#btnBack');
-    back.hidden = !(v === 'reader' || v === 'search');
+    back.hidden = !(v === 'reader' || v === 'search' || v === 'raw');
 
-    if (v === 'shelf') { $('#viewTitle').textContent = '纸间'; renderShelf(); }
+    if (v === 'shelf') {
+      // 离开网页书时释放 iframe
+      const rf = $('#rawFrame');
+      if (rf && rf.getAttribute('src') && rf.getAttribute('src') !== 'about:blank') {
+        rf.src = 'about:blank';
+      }
+      $('#viewTitle').textContent = '纸间';
+      renderShelf();
+    }
+    if (v === 'raw') {
+      const b = S.rawBook;
+      $('#viewTitle').textContent = b ? b.title : '网页书';
+      $('#viewSub').textContent = b ? '网页书 · 原样' : '';
+    }
     if (v === 'timeline') { $('#viewTitle').textContent = '时间轴'; renderTimeline(); }
     if (v === 'calendar') { $('#viewTitle').textContent = '日历'; renderCalendar(); }
     if (v === 'gallery') { $('#viewTitle').textContent = '相册'; renderGallery(); }
@@ -334,11 +347,11 @@
     c.hidden = true;
   }
 
-  /** 原样 HTML 书：全屏 iframe 打开（/raw/ 由 Service Worker 提供虚拟文件系统） */
+  /** 原样 HTML 书：封面掀开 → 沉浸显示（就是那本书，不是网页外壳） */
   async function openRawBook(book) {
     if (S.editing) { S.editing = false; $('#writerBar').hidden = true; }
 
-    // 打开前确保 SW 已接管（安装/激活有几秒时序，未接管时 /raw/ 会 404）
+    // SW 接管保障（未接管时 /raw/ 会 404）
     if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
       try {
         await navigator.serviceWorker.ready;
@@ -349,18 +362,25 @@
       } catch (e) { /* ignore */ }
     }
 
+    S.rawBook = book;
     const url = new URL(
       '/raw/' + book.id + '/' + (book.entryPath ? encodeURI(book.entryPath) : 'index.html'),
       location.href
     ).href;
-    const v = $('#viewer');
-    const iframe = document.createElement('iframe');
-    iframe.src = url;
-    iframe.setAttribute('allow', 'fullscreen');
-    iframe.style.cssText = 'width:100%;height:100%;border:0;border-radius:6px;background:#fff';
-    $('#viewerBody').innerHTML = '';
-    $('#viewerBody').appendChild(iframe);
-    v.hidden = false;
+
+    // 先借 reader 的书放封面，掀开的瞬间切入网页书内容
+    setView('reader');
+    await ensureFlip();
+    Flip.setPage(`<div class="sheet"><div class="sheet-empty">
+      <div class="se-ico">❊</div>
+      <div class="se-text">正在翻开《${escapeHtml(book.title)}》…</div>
+    </div></div>`);
+    updatePager();
+    await showCover(book);
+    $('#rawFrame').src = url;          // 掀封面的同时后台加载
+    await sleep(150);
+    await openCover();
+    setView('raw');                    // 沉浸进入
   }
 
   async function openBook(bookId) {
@@ -1319,6 +1339,10 @@
           if (ev.key === 'Enter' && S.books[shelfIndex]) {
             ev.preventDefault(); openBook(S.books[shelfIndex].id);
           }
+        }
+        if (S.view === 'raw' && (ev.key === 'Escape' || ev.key === 'Backspace')) {
+          ev.preventDefault();
+          setView('shelf');
         }
         return;
       }
