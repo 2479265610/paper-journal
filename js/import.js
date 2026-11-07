@@ -401,7 +401,7 @@
         };
         await Store.putBook(book);
       }
-      books.push({ id: book.id, title, count: list.length });
+      books.push({ id: book.id, title, count: list.length, ym });
 
       const existing = new Set((await Store.listEntries({ bookId: book.id })).map(e => e.day));
 
@@ -448,8 +448,52 @@
       }
     }
 
+    // 未被任何日记引用的照片（没有日期）→ 照片墙，放进最早那本的末尾
+    const refBase = new Set();
+    for (const p of parsed) for (const u of p.images) refBase.add(u.split('/').pop());
+    const unused = [...imgSet].filter(rel =>
+      /\.(jpe?g|png|webp)$/i.test(rel) && !refBase.has(rel.split('/').pop())
+    );
+
+    if (unused.length && books.length) {
+      ipUpdate(0.97, `照片墙 ${unused.length} 张…`);
+      const firstBook = books[0];
+      const ym = firstBook.ym || parsed[0].day.slice(0, 7);
+      const [yy, mm] = ym.split('-').map(Number);
+      const lastDay = `${ym}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+
+      const atts = [];
+      for (const rel of unused) {
+        try {
+          const blob = await source.getImage(rel);
+          if (!blob) continue;
+          const fname = rel.split('/').pop();
+          const m = await Store.putMedia(new File([blob], fname, { type: blob.type || guessType(rel) }));
+          atts.push({ id: uid(), type: 'image', mediaId: m.id, name: fname, size: blob.size });
+        } catch (e) { /* 单张失败跳过 */ }
+      }
+      if (atts.length) {
+        const exists = (await Store.listEntries({ bookId: firstBook.id }))
+          .some(x => x.photoWall);
+        if (!exists) {
+          await Store.putEntry({
+            id: uid(),
+            bookId: firstBook.id,
+            day: lastDay,
+            ts: new Date(lastDay + 'T23:50:00').getTime(),
+            title: '', body: '',
+            attachments: atts,
+            photoWall: true,
+            tags: [], mood: '', weather: '', starred: 0,
+            createdAt: Date.now(), updatedAt: Date.now()
+          });
+          made++;
+        }
+      }
+    }
+
     ipHide();
-    return { books, entries: made, skipped, total };
+    return { books, entries: made, skipped, total, wall: unused.length };
   }
 
   /* ── 文件选择器（供按钮调用） ── */

@@ -108,7 +108,7 @@
   function applySettings() {
     document.getElementById('app').dataset.theme = S.cfg.theme;
     document.documentElement.style.setProperty('--grain-opacity', S.cfg.grain ? '.5' : '0');
-    const fs = { s: '15.5px', m: '17.5px', l: '19.5px' }[S.cfg.font] || '17.5px';
+    const fs = { s: '16px', m: '18px', l: '20px' }[S.cfg.font] || '18px';
     document.documentElement.style.setProperty('--fs-body', fs);
     Sound.enabled = !!S.cfg.sound;
     Sync.setConfig({ url: S.cfg.davUrl, user: S.cfg.davUser, pass: S.cfg.davPass, proxy: S.cfg.davProxy });
@@ -613,24 +613,57 @@
     const wc = wordCount(e.body);
     const total = S.entries.length || 1;
     const num = typeof opt.index === 'number' ? `${opt.index + 1} / ${total}` : '';
-
     const tags = (e.tags || []).map(t => `<span class="sf-tag" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}</span>`).join('');
-
     const allAtts = e.attachments || [];
-    const imgs = allAtts.filter(a => a.type === 'image');
+
+    // 照片墙：一整页专门放没有日期的照片
+    if (e.photoWall) {
+      const cells = [];
+      for (const a of allAtts) {
+        if (a.type !== 'image') continue;
+        const u = await mediaURL(a.mediaId);
+        cells.push(`<div class="wall-cell" data-act="view" data-mid="${a.mediaId}">
+          ${u ? `<img src="${u}" alt="" loading="lazy">` : '<div class="att-empty">照片待同步</div>'}
+        </div>`);
+      }
+      return `<div class="sheet sheet-wall">
+        <header class="pg-head">
+          <h2 class="pg-date">照片墙</h2>
+          <div class="pg-meta"><span class="pg-chip c">${cells.length} 张</span></div>
+        </header>
+        <div class="pg-wall">${cells.join('')}</div>
+        <footer class="pg-foot"><span class="pg-num">${num}</span></footer>
+      </div>`;
+    }
+
+    // 表情包嵌正文；照片放这一篇的末尾（原样、可放大）
+    const isEmoji = (a) => /\.gif$/i.test(a.name || '') || (a.size && a.size < 260 * 1024);
+    const emojis = allAtts.filter(a => a.type === 'image' && isEmoji(a));
+    const photos = allAtts.filter(a => a.type === 'image' && !isEmoji(a));
     const others = allAtts.filter(a => a.type !== 'image');
 
-    // 编辑态把图片留在文末（可删除），阅读态内嵌到正文里环绕排版
     let bodyHtml = e.body || '';
     let attHTML = '';
+
     if (S.editing) {
       attHTML = await renderAttachments(e);
     } else {
-      const figs = await inlineFigureHTML(imgs);
+      const figs = await inlineFigureHTML(emojis);
       bodyHtml = weaveFigures(bodyHtml, figs);
-      attHTML = others.length
-        ? await renderAttachments(Object.assign({}, e, { attachments: others }))
-        : '';
+
+      if (photos.length) {
+        const cells = [];
+        for (const a of photos) {
+          const u = await mediaURL(a.mediaId);
+          cells.push(`<div class="ph-cell" data-act="view" data-mid="${a.mediaId}">
+            ${u ? `<img src="${u}" alt="" loading="lazy">` : '<div class="att-empty">照片待同步</div>'}
+          </div>`);
+        }
+        attHTML = `<div class="pg-photos${photos.length === 1 ? ' single' : ''}">${cells.join('')}</div>`;
+      }
+      if (others.length) {
+        attHTML += await renderAttachments(Object.assign({}, e, { attachments: others }));
+      }
     }
 
     return `<div class="sheet" data-id="${e.id}">
