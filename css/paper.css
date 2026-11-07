@@ -1223,6 +1223,101 @@ input, textarea { border: 0; background: none; outline: none; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
+/* ══════════ v1.3 视觉打磨 ══════════ */
+
+/* 书写光标用主题色，编辑区呼吸感 */
+.sh-title[contenteditable="true"],
+.sh-body[contenteditable="true"] { caret-color: var(--accent); }
+
+/* 附件：入场弹性出现 + 渐显 */
+.attachments .att-img,
+.attachments .att-video,
+.attachments .att-audio,
+.attachments .att-file,
+.attachments .att-html {
+  animation: attIn .5s cubic-bezier(.3, 1.06, .32, 1) both;
+}
+.attachments .att-img:nth-child(2),
+.attachments .att-video:nth-child(2) { animation-delay: .05s; }
+.attachments .att-img:nth-child(3),
+.attachments .att-video:nth-child(3) { animation-delay: .1s; }
+@keyframes attIn {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.attachments img { opacity: 0; transition: opacity .45s ease; }
+.attachments img.loaded, .attachments img[src^="blob:"] { opacity: 1; }
+
+/* 附件卡片：左色条 + 悬停抬升（Apple sheet 触感） */
+.att-file, .att-html { position: relative; transition: transform .32s cubic-bezier(.3,1.06,.32,1), box-shadow .3s, border-color .3s; }
+.att-file::before, .att-html::before {
+  content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px;
+  border-radius: 3px; background: linear-gradient(#c9563f, #97301d); z-index: 2;
+}
+.att-html::before { background: linear-gradient(#4a7bb5, #2f5581); }
+@media (hover: hover) {
+  .att-file:hover, .att-html:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(50,40,25,.14), 0 2px 6px rgba(50,40,25,.08);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  }
+}
+
+/* 视频块内嵌播放器圆角 */
+.att-video video { border-radius: 6px; }
+
+/* 拖拽导入遮罩 */
+.dropzone {
+  position: absolute; inset: 0; z-index: 95;
+  display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  backdrop-filter: blur(6px) saturate(1.15);
+  -webkit-backdrop-filter: blur(6px) saturate(1.15);
+  animation: fade .16s both;
+}
+.dz-card {
+  padding: 36px 52px;
+  border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent);
+  border-radius: 18px;
+  text-align: center;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  box-shadow: 0 22px 60px rgba(40,32,20,.22), 0 3px 10px rgba(40,32,20,.1);
+  animation: dzPop .3s cubic-bezier(.3, 1.2, .3, 1) both;
+}
+.dz-ico { font-size: 32px; color: var(--accent); line-height: 1; }
+.dz-title { margin: 12px 0 0; font-size: 15px; letter-spacing: .06em; color: var(--ink); font-weight: 500; }
+.dz-sub { margin: 7px 0 0; font-size: 11px; letter-spacing: .12em; color: var(--ink-3); }
+@keyframes dzPop {
+  from { opacity: 0; transform: scale(.92) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 抽屉遮罩：Apple sheet 式层级（ζ=0.8/0.3s 的滑入已在 .drawer） */
+.sheet-mask { background: rgba(28, 23, 16, .42); backdrop-filter: blur(4px) saturate(1.1); }
+
+/* 书写工具条：更轻的分层投影 */
+.writer-bar {
+  border-radius: 14px;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.35) inset,
+    0 14px 44px rgba(40,32,20,.26),
+    0 2px 8px rgba(40,32,20,.12);
+}
+
+/* 日历今天：更明确 */
+.cal-cell.today {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* 相册图片渐显 */
+.gal-item img, .gal-item video { opacity: 0; transition: opacity .5s ease; }
+.gal-item img.loaded, .gal-item video.loaded, .gal-item img[src^="blob:"] { opacity: 1; }
+
+@media (max-width: 640px) {
+  .dz-card { padding: 26px 30px; }
+}
+
 /* ══════════ 响应式 ══════════ */
 @media (max-width: 640px) {
   :root { --fs-body: 15.5px; }

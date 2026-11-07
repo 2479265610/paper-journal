@@ -363,7 +363,9 @@
       getNextHTML: () => htmlCache.get(S.idx + 1) || '',
       getPrevHTML: () => htmlCache.get(S.idx - 1) || '',
       getUnderHTML: (dir) => htmlCache.get(S.idx + dir) || '',
-      onFlip: (dir) => onFlipDone(dir)
+      onFlip: (dir) => onFlipDone(dir),
+      // 连点连翻：弹簧动画落定后立即处理排队的那一次
+      onQueued: (dir) => { dir > 0 ? goNext() : goPrev(); }
     });
     return Flip;
   }
@@ -650,6 +652,8 @@
   }
 
   async function openEntry(entry) {
+    if (S.editing) { S.editing = false; $('#writerBar').hidden = true; }
+    await refreshAll();
     S.bookId = entry.bookId;
     S.entries = (await Store.listEntries({ bookId: entry.bookId })).slice().reverse();
     S.idx = S.entries.findIndex(x => x.id === entry.id);
@@ -1273,6 +1277,52 @@
       }
       if (S.view !== 'shelf') setView('shelf');
     });
+
+    // 拖拽文件到页面导入（仅编辑态）
+    let dragDepth = 0;
+    document.addEventListener('dragenter', (e) => {
+      if (S.editing && S.view === 'reader' &&
+          e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')) {
+        dragDepth++;
+        $('#dropzone').hidden = false;
+      }
+    });
+    document.addEventListener('dragleave', () => {
+      if (--dragDepth <= 0) { dragDepth = 0; $('#dropzone').hidden = true; }
+    });
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dragDepth = 0; $('#dropzone').hidden = true;
+      const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+      if (!files.length) return;
+      if (S.editing && S.view === 'reader') {
+        handleFiles(files);
+      } else {
+        toast('先点开一篇日记进入书写，再把文件拖进来');
+      }
+    });
+
+    // 粘贴截图直接进这一页
+    document.addEventListener('paste', (e) => {
+      if (!S.editing || S.view !== 'reader') return;
+      const files = Array.from((e.clipboardData && e.clipboardData.files) || []);
+      const imgs = files.filter(f => f.type && f.type.startsWith('image/'));
+      if (imgs.length) {
+        e.preventDefault();
+        handleFiles(imgs);
+        toast('截图已放进这一页');
+      }
+    });
+
+    // 图片/视频加载完成后渐显（load 事件不冒泡，用捕获）
+    document.addEventListener('load', (e) => {
+      const t = e.target;
+      if (t && (t.tagName === 'IMG' || t.tagName === 'VIDEO') &&
+          (t.closest('.attachments') || t.closest('.gallery'))) {
+        t.classList.add('loaded');
+      }
+    }, true);
 
     // 解锁音频（首次交互）
     const unlock = () => { Sound.unlock(); document.removeEventListener('pointerdown', unlock); };

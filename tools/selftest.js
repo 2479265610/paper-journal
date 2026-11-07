@@ -111,6 +111,78 @@
         await new Promise(r => setTimeout(r, 300));
         log('themeAfterCycle', app.dataset.theme);
         check('主题可切换', app.dataset.theme !== themeBefore);
+
+        /* ══ 附件全链路：图片 / PDF / HTML → 页面渲染 → 相册 → 清理 ══ */
+        try {
+          const Store = window.PJ.Store;
+          // 1. canvas 画一张真 PNG
+          const cv = document.createElement('canvas');
+          cv.width = 160; cv.height = 110;
+          const ctx = cv.getContext('2d');
+          const gr = ctx.createLinearGradient(0, 0, 160, 110);
+          gr.addColorStop(0, '#b1553c'); gr.addColorStop(1, '#2b2723');
+          ctx.fillStyle = gr; ctx.fillRect(0, 0, 160, 110);
+          ctx.fillStyle = '#fff'; ctx.font = '20px serif';
+          ctx.fillText('纸间', 58, 62);
+          const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+          const f1 = new File([blob], '自检图片.png', { type: 'image/png' });
+
+          // 2. 最小合法头 PDF（浏览器只做嵌入，不解析内容）
+          const pdfText = '%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n%%EOF';
+          const f2 = new File([pdfText], '自检文档.pdf', { type: 'application/pdf' });
+
+          // 3. HTML 卡片
+          const f3 = new File(
+            ['<h2 style="font-family:serif">纸间附件</h2><p>HTML 以沙箱 iframe 渲染。</p>'],
+            '自检页面.html', { type: 'text/html' });
+
+          const m1 = await Store.putMedia(f1);
+          const m2 = await Store.putMedia(f2);
+          const m3 = await Store.putText(await f3.text(), f3.name, 'text/html');
+          check('媒体入库（图片）', !!(m1 && m1.id));
+          check('媒体入库（PDF）', !!(m2 && m2.id));
+          check('媒体入库（HTML）', !!(m3 && m3.id));
+
+          const d = new Date();
+          const dk = d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0');
+          const e = {
+            id: 'selftest-attach-' + Date.now(),
+            bookId: (window.__PJ.S.books[0] || {}).id,
+            day: dk, ts: Date.now(),
+            title: '附件自检',
+            body: '<p>下面依次是照片、PDF、HTML：</p>',
+            attachments: [
+              { id: 'sa1', type: 'image', mediaId: m1.id, name: f1.name, size: f1.size },
+              { id: 'sa2', type: 'pdf', mediaId: m2.id, name: f2.name, size: f2.size },
+              { id: 'sa3', type: 'html', mediaId: m3.id, name: f3.name, size: f3.size }
+            ],
+            tags: [], mood: '', weather: '', starred: 0,
+            createdAt: Date.now(), updatedAt: Date.now()
+          };
+          await Store.putEntry(e);
+          await window.__PJ.openEntry(e);
+          await new Promise(r => setTimeout(r, 800));
+
+          check('照片渲染出 <img>', !!document.querySelector('#leafFront .att-img img'));
+          const imgEl = document.querySelector('#leafFront .att-img img');
+          log('imgSrc', imgEl && imgEl.getAttribute('src'));
+          check('PDF 卡片渲染', !!document.querySelector('#leafFront .att-file .af-ico.pdf'));
+          check('HTML 沙箱 iframe 渲染', !!document.querySelector('#leafFront .att-html iframe'));
+
+          // 相册
+          document.querySelector('[data-tab="gallery"]').click();
+          await new Promise(r => setTimeout(r, 800));
+          check('相册收录了照片', document.querySelectorAll('#gallery .gal-item').length >= 1);
+
+          // 清理测试数据（gcMedia 连带删媒体）
+          await Store.purgeEntry(e.id);
+          check('测试条目已清理', !(await Store.getEntry(e.id)));
+        } catch (err) {
+          fail('附件链路异常: ' + (err && err.message));
+          report.errors.push(String(err && err.stack));
+        }
       }
     } catch (e) {
       fail('运行异常: ' + (e && e.message));

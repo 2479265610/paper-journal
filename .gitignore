@@ -11,9 +11,7 @@ data/
 icons/*.png
 desktop/app/
 desktop/node_modules/
-desktop/release/
-desktop/release2/
-desktop/release3/
+desktop/release*/
 desktop/data/
 
 # Android
