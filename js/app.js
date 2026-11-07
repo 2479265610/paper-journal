@@ -108,7 +108,7 @@
   function applySettings() {
     document.getElementById('app').dataset.theme = S.cfg.theme;
     document.documentElement.style.setProperty('--grain-opacity', S.cfg.grain ? '.5' : '0');
-    const fs = { s: '15px', m: '16px', l: '18px' }[S.cfg.font] || '16px';
+    const fs = { s: '15.5px', m: '17.5px', l: '19.5px' }[S.cfg.font] || '17.5px';
     document.documentElement.style.setProperty('--fs-body', fs);
     Sound.enabled = !!S.cfg.sound;
     Sync.setConfig({ url: S.cfg.davUrl, user: S.cfg.davUser, pass: S.cfg.davPass, proxy: S.cfg.davProxy });
@@ -611,9 +611,8 @@
         <h2 class="pg-date">${d.getMonth() + 1} 月 ${d.getDate()} 日</h2>
         <div class="pg-meta">
           <span class="pg-chip">${WEEK[d.getDay()]}</span>
-          ${e.mood ? `<span class="pg-chip">${escapeHtml(e.mood)}</span>` : ''}
-          ${e.weather ? `<span class="pg-chip">${escapeHtml(e.weather)}</span>` : ''}
-          ${wc ? `<span class="pg-chip">${wc} 字</span>` : ''}
+          ${e.weather ? `<span class="pg-chip t">${escapeHtml(e.weather)}</span>` : ''}
+          ${wc ? `<span class="pg-chip c">${wc} 字</span>` : ''}
         </div>
       </header>
       <h3 class="pg-title" data-ed="title">${escapeHtml(e.title || '')}</h3>

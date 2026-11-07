@@ -86,6 +86,17 @@
       if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
     }
 
+    /** 纸面扫光：每次起翻触发一次 */
+    _sheen() {
+      const el = this.book.querySelector('.sheen');
+      if (!el) return;
+      el.classList.remove('on');
+      void el.offsetWidth;
+      el.classList.add('on');
+      clearTimeout(this._sheenT);
+      this._sheenT = setTimeout(() => el.classList.remove('on'), 800);
+    }
+
     _spring(from, to, v0, cfg, cb) {
       this._cancel();
       this.leaf.style.transition = 'none';
@@ -136,6 +147,7 @@
       this._set(this.back, nextHTML);
       if (underHTML != null) this._set(this.under, underHTML);
       this._apply(0);
+      this._sheen();
 
       this._spring(0, -180, 0, SPRING.flip, () => {
         this._curHTML = nextHTML || '';
@@ -174,6 +186,7 @@
       this._set(this.back, prevHTML);
       if (priorHTML != null) this._set(this.left, priorHTML);
       this._apply(0);
+      this._sheen();
 
       this._spring(0, -180, 0, SPRING.flip, () => {
         this._curHTML = prevHTML || '';
@@ -225,6 +238,7 @@
           fromAngle = (!this.spread && dir === -1) ? -180 : 0;
           toAngle = (!this.spread && dir === -1) ? 0 : -180;
           this._prepare(dir);
+          this._sheen();
         }
 
         const p = clamp(Math.abs(dx) / span, 0, 1);

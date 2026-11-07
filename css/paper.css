@@ -22,7 +22,7 @@
   --shadow-2: 0 8px 30px rgba(63, 52, 36, .12), 0 2px 8px rgba(63, 52, 36, .07);
   --radius: 10px;
   --grain-opacity: .5;
-  --fs-body: 16px;
+  --fs-body: 17.5px;
 }
 
 [data-theme="kraft"] {
@@ -1502,7 +1502,86 @@ input, textarea { border: 0; background: none; outline: none; }
 }
 
 /* ══════════ 双页摊开的书（Spread） ══════════ */
-#app[data-view="reader"] #viewReader { padding: 6px 84px 0; }
+#app[data-view="reader"] #viewReader {
+  padding: 6px 84px 0;
+  background:
+    radial-gradient(72% 46% at 50% -8%, color-mix(in srgb, var(--paper) 62%, #fff) 0%, transparent 62%);
+}
+
+/* 书口纸堆：两侧露出的纸页截面，叠出「这本书有多厚」 */
+.stack {
+  position: absolute;
+  top: 9px; bottom: 9px;
+  width: 9px;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg,
+    color-mix(in srgb, var(--paper) 94%, #fff) 0 1.2px,
+    color-mix(in srgb, var(--paper-edge) 82%, #b9a67c) 1.2px 2.4px,
+    color-mix(in srgb, var(--paper) 90%, #fff) 2.4px 3.6px,
+    color-mix(in srgb, var(--paper-edge) 70%, #9d8a63) 3.6px 4.8px);
+  box-shadow: 0 2px 7px rgba(80, 68, 46, .18);
+}
+.stack.left { left: -9px; border-radius: 3px 0 0 3px; }
+.stack.right { right: -9px; border-radius: 0 3px 3px 0; }
+
+/* 两侧相邻的本子：只露一条边，模糊到看不清字，暗示旁边还有书 */
+.peek {
+  position: absolute;
+  top: 3px; bottom: 3px;
+  width: 78%;
+  z-index: 0;
+  border-radius: 6px;
+  pointer-events: none;
+  opacity: .9;
+  filter: blur(1.6px);
+  background: linear-gradient(104deg,
+    color-mix(in srgb, var(--paper) 96%, #fff) 0%,
+    color-mix(in srgb, var(--paper) 88%, var(--paper-edge)) 100%);
+  box-shadow: 0 8px 22px -12px rgba(70, 58, 38, .45);
+}
+.peek.left { left: -58px; }
+.peek.right { right: -58px; }
+.peek::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(to left, rgba(70, 58, 38, .28), rgba(70, 58, 38, 0) 46%);
+}
+.peek.right::after {
+  background: linear-gradient(to right, rgba(70, 58, 38, .28), rgba(70, 58, 38, 0) 46%);
+}
+[data-theme="ink"] .peek { box-shadow: 0 8px 22px -12px rgba(0, 0, 0, .7); }
+[data-theme="ink"] .peek::after { background: linear-gradient(to left, rgba(0,0,0,.6), rgba(0,0,0,0) 46%); }
+[data-theme="ink"] .peek.right::after { background: linear-gradient(to right, rgba(0,0,0,.6), rgba(0,0,0,0) 46%); }
+
+/* 翻页扫光：纸面掠过的一道高光（独立层，不干扰 3D 变换） */
+.sheen {
+  position: absolute; inset: 0;
+  z-index: 6;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+.sheen.on { opacity: 1; }
+.sheen::before {
+  content: "";
+  position: absolute; inset: -12% -35%;
+  background: linear-gradient(100deg,
+    rgba(255, 255, 255, 0) 34%,
+    rgba(255, 255, 255, .42) 50%,
+    rgba(255, 255, 255, 0) 66%);
+}
+.sheen.on::before {
+  animation: paperSheen .76s cubic-bezier(.38, .03, .2, 1) both;
+}
+@keyframes paperSheen {
+  0%   { transform: translateX(-58%) rotate(8deg); opacity: 0; }
+  32%  { opacity: .9; }
+  100% { transform: translateX(58%) rotate(8deg); opacity: 0; }
+}
 
 .book {
   position: relative;
@@ -1583,8 +1662,12 @@ input, textarea { border: 0; background: none; outline: none; }
 .edge-zone { top: 4%; bottom: 4%; width: 9%; z-index: 5; }
 
 /* 书内页不再各自带外阴影（整本书一层即可；翻页时的阴影由 JS 动态给） */
-.leaf-face { box-shadow: none; }
+.leaf-face { box-shadow: none; scrollbar-width: none; }
+.leaf-face::-webkit-scrollbar { width: 0; height: 0; }
 .page-left, .page-under { box-shadow: none; }
+
+/* 页码只出现在右页（真书也只在一边标页） */
+#pageLeft .pg-num { visibility: hidden; }
 
 /* 侧边翻页按钮：悬浮在书页外侧 */
 .side-btn {
@@ -1616,34 +1699,64 @@ input, textarea { border: 0; background: none; outline: none; }
 .pg-btn { display: none; }
 
 /* ══════════ 页内版式（对照真书） ══════════ */
-.sheet { padding: 34px 40px 44px 44px; }
+.sheet { padding: 30px 36px 34px 40px; }
+
+/* 页头：日期 + 三色胶囊，底下一条彩虹细线 */
 .pg-head {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 10px;
+  position: relative;
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 11px;
+  margin-bottom: 15px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+}
+.pg-head::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; border-radius: 2px; opacity: .75;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--accent) 85%, transparent),
+    color-mix(in srgb, var(--accent) 45%, #cbe8a4),
+    color-mix(in srgb, var(--accent) 55%, #a6dcd0),
+    color-mix(in srgb, var(--accent) 40%, #d6ecb0),
+    color-mix(in srgb, var(--accent) 80%, transparent));
 }
 .pg-date {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: 20px;
-  font-weight: 500;
-  letter-spacing: .02em;
-  color: var(--ink);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--accent) 84%, var(--ink));
 }
-.pg-meta { display: flex; align-items: center; gap: 6px; }
+.pg-meta { display: flex; align-items: baseline; gap: 5px; overflow: hidden; }
 .pg-chip {
   font-size: 10.5px;
-  letter-spacing: .06em;
-  color: var(--ink-3);
-  background: color-mix(in srgb, var(--line) 42%, transparent);
-  border-radius: 10px;
+  letter-spacing: .04em;
+  border-radius: 20px;
   padding: 2.5px 9px;
+  line-height: 1.5;
   white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: color-mix(in srgb, var(--accent) 74%, var(--ink));
 }
+.pg-chip.t {
+  background: color-mix(in srgb, #4a7ea3 15%, transparent);
+  color: color-mix(in srgb, #35618a 76%, var(--ink));
+}
+.pg-chip.c {
+  background: color-mix(in srgb, #8a9a3a 15%, transparent);
+  color: color-mix(in srgb, #6d7a2a 78%, var(--ink));
+}
+[data-theme="ink"] .pg-chip { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+[data-theme="ink"] .pg-chip.t { background: color-mix(in srgb, #4a7ea3 30%, transparent); }
+[data-theme="ink"] .pg-chip.c { background: color-mix(in srgb, #8a9a3a 28%, transparent); }
+
 .pg-title {
-  margin: 14px 0 0;
+  margin: 12px 0 0;
   font-family: var(--font-serif);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 500;
   letter-spacing: .03em;
   line-height: 1.5;
@@ -1652,40 +1765,44 @@ input, textarea { border: 0; background: none; outline: none; }
 }
 .pg-title:empty { display: none; }
 
-.sh-body { margin-top: 14px; line-height: 2.02; }
-.sh-body p { margin: 0 0 .55em; text-indent: 2em; }
-.sh-body p:first-child { text-indent: 2em; }
+.sh-body { margin-top: 13px; line-height: 1.92; }
+.sh-body p { margin: 0 0 .9em; text-indent: 2em; }
+.sh-body p:last-child { margin-bottom: 0; }
 .sh-body blockquote p { text-indent: 0; }
 .sh-body li p { text-indent: 0; }
 
-/* 正文内嵌图：文字环绕 */
+/* 正文内嵌图：34% 宽浮动，文字环绕（再宽正文就被挤成窄列） */
 .pg-fig {
   float: right;
-  width: 43%;
-  margin: 2px 0 10px 16px;
-  border-radius: 6px;
+  width: 34%;
+  max-width: 168px;
+  margin: 4px 0 10px 14px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 3px 14px rgba(45, 35, 20, .16);
-  shape-outside: border-box;
+  filter: drop-shadow(0 5px 14px rgba(60, 50, 35, .18));
 }
 .pg-fig img {
   display: block; width: 100%; height: auto;
-  margin: 0;
+  margin: 0; border-radius: 14px; box-shadow: none;
 }
-.pg-fig.alt { float: left; margin: 2px 16px 10px 0; }
+.pg-fig.alt { float: left; margin: 4px 14px 10px 0; }
+.sh-body::after { content: ""; display: block; clear: both; }
 
 .pg-foot {
   margin-top: auto;
-  padding-top: 18px;
-  display: flex; align-items: center; gap: 8px;
+  padding-top: 16px;
+  display: flex; align-items: flex-end; gap: 8px;
   font-size: 10.5px; letter-spacing: .1em;
   color: var(--ink-3);
+  min-height: 28px;
 }
 .pg-num {
   margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .18em;
-  opacity: .8;
+  letter-spacing: .16em;
+  color: color-mix(in srgb, var(--accent) 62%, var(--ink-3));
 }
 
 /* 书页边缘的叶脉装饰 */
@@ -1709,6 +1826,7 @@ input, textarea { border: 0; background: none; outline: none; }
   #app[data-view="reader"] #viewReader { padding: 4px 8px 0; }
   .book { width: 100%; }
   .page-left { display: none; }
+  .peek, .stack { display: none; }
   .page-under, .leaf, .leaf.to-left {
     left: 0; right: 0; width: 100%;
     transform-origin: left center;

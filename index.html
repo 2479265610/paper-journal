@@ -88,11 +88,16 @@ if (location.search.indexOf('reset') >= 0) {
   <!-- ══════════ 2. 阅读 / 书写 ══════════ -->
   <section class="view" id="viewReader">
     <div class="book" id="book">
+      <div class="peek left" aria-hidden="true"></div>
+      <div class="peek right" aria-hidden="true"></div>
+      <div class="stack left" aria-hidden="true"></div>
+      <div class="stack right" aria-hidden="true"></div>
       <div class="page-left" id="pageLeft"></div>
       <div class="page-under" id="pageUnder"></div>
       <div class="leaf" id="leaf">
         <div class="leaf-face leaf-front" id="leafFront"></div>
         <div class="leaf-face leaf-back" id="leafBack"></div>
+        <div class="sheen" aria-hidden="true"></div>
       </div>
       <div class="spine-gap" aria-hidden="true"></div>
       <div class="flip-shadow" id="flipShadow"></div>
