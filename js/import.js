@@ -270,6 +270,17 @@
     return { type: 'site', bookId, title, files: arr.length, missing };
   }
 
+  /** 检测 HTML 内部引用的其他本地页面（引导多选导入） */
+  async function detectRefs(file) {
+    try {
+      const head = await file.slice(0, Math.min(file.size, 2 * 1024 * 1024)).text();
+      const refs = (head.match(/[\w\-. %\u4e00-\u9fa5]+\.html?(?![\w])/gi) || [])
+        .map(s => s.trim())
+        .filter(u => !/^https?:/i.test(u) && !/^\s*$/.test(u));
+      return [...new Set(refs)];
+    } catch (e) { return []; }
+  }
+
   /* ── 文件选择器（供按钮调用） ── */
   function pickImport(multiple) {
     const inp = document.createElement('input');
@@ -284,7 +295,7 @@
     inp.click();
   }
 
-  const Importer = { importFiles, importSite, pickImport, onFiles: null };
+  const Importer = { importFiles, importSite, pickImport, detectRefs, onFiles: null };
   global.PJ = global.PJ || {};
   global.PJ.Importer = Importer;
 })(window);

@@ -298,6 +298,7 @@
       try {
         say('连接服务器…');
         await this._ensureDir();
+        try { await this._fetch('MKCOL', this._url('raw/'), null); } catch (e) { /* ignore */ }
 
         say('读取远端索引…');
         const remoteManifest = await this._getJSON('manifest.json');
@@ -384,6 +385,16 @@
           } catch (e) { /* ignore */ }
         }
 
+        // 网页书（原样 HTML）同步
+        try {
+          const rs = await this.syncRawBooks(say);
+          stat.rawUp = rs.up;
+          stat.rawDown = rs.down;
+          if (rs.skip) stat.rawSkip = rs.skip;
+        } catch (e) {
+          console.warn('raw books sync fail', e);
+        }
+
         // 重写远端索引
         say('写入索引…');
         const finalAll = await Store.listEntries({ includeDeleted: true });
@@ -424,6 +435,106 @@
     }
     return h.toString(16);
   }
+
+  /* ────────── 网页书（原样 HTML）同步 ────────── */
+  /**
+   * 远端结构：
+   *   raw/index.json                 { v, books: { id: {title, entryPath, sig, files, tomb?} } }
+   *   raw/<bookId>/manifest.json     { v, title, entryPath, files: [{path,hash,size}] }
+   *   raw/<bookId>/files/<enc path>  文件本体
+   * 策略：sig（路径+哈希签名）不同即整本核对，缺谁补谁；删除用墓碑跨设备传播。
+   */
+  Sync.syncRawBooks = async function (say) {
+    const stat = { up: 0, down: 0, skip: 0 };
+    const tombs = new Set(await Store.getRawTombs());
+
+    let index = await this._getJSON('raw/index.json');
+    if (!index || !index.books) index = { v: 1, books: {} };
+
+    // 远端墓碑合并进本地，并删除本地残留副本
+    for (const id of Object.keys(index.books)) {
+      if (!index.books[id].tomb) continue;
+      tombs.add(id);
+      await Store.addRawTomb(id);
+      const has = (await Store.listBooks()).some(b => b.id === id && b.kind === 'html');
+      if (has) {
+        say('清理已删除的网页书…');
+        await Store.delRawFiles(id);
+        await Store.delBook(id);
+      }
+    }
+
+    const localBooks = (await Store.listBooks()).filter(b => b.kind === 'html');
+
+    // 推送 / 核对本地网页书
+    for (const b of localBooks) {
+      if (tombs.has(b.id)) continue;
+      const local = await Store.listRawFiles(b.id);
+      const localSig = local.map(f => f.path + ':' + f.hash).sort().join('|');
+      const remote = index.books[b.id];
+      if (remote && remote.sig === localSig && !remote.tomb) { stat.skip++; continue; }
+
+      say(`同步网页书《${b.title}》…`);
+      const remoteByPath = {};
+      ((remote && remote.files) || []).forEach(f => { remoteByPath[f.path] = f; });
+
+      for (const f of local) {
+        const rf = remoteByPath[f.path];
+        if (rf && rf.hash === f.hash) continue;         // 远端已有同内容文件
+        const buf = await f.blob.arrayBuffer();
+        await this._fetch('PUT',
+          this._url(`raw/${b.id}/files/${encodeURIComponent(f.path)}`),
+          buf,
+          { 'Content-Type': f.type || 'application/octet-stream' });
+        stat.up++;
+      }
+      const manifest = {
+        v: 1, title: b.title, entryPath: b.entryPath || 'index.html',
+        files: local.map(f => ({ path: f.path, hash: f.hash, size: f.size }))
+      };
+      await this._putJSON(`raw/${b.id}/manifest.json`, manifest);
+      index.books[b.id] = {
+        id: b.id, title: b.title, entryPath: manifest.entryPath,
+        sig: localSig, files: manifest.files
+      };
+    }
+
+    // 拉取远端有、本地无的网页书
+    for (const id of Object.keys(index.books)) {
+      if (tombs.has(id)) continue;
+      const info = index.books[id];
+      if (info.tomb) continue;
+      if (localBooks.some(b => b.id === id)) continue;
+      if (!info.files || !info.files.length) continue;
+
+      try {
+        say(`下载网页书《${info.title || id}》…`);
+        for (const rf of info.files) {
+          const resp = await this._fetch('GET',
+            this._url(`raw/${id}/files/${encodeURIComponent(rf.path)}`));
+          if (!resp.ok) throw new Error(`${rf.path} → ${resp.status}`);
+          const blob = await resp.blob();
+          await Store.putRawFile({
+            id: id + '/' + rf.path, bookId: id, path: rf.path,
+            blob, type: '', size: rf.size, hash: rf.hash
+          });
+        }
+        await Store.putBook({
+          id, title: info.title || '网页书', kind: 'html',
+          entryPath: info.entryPath || 'index.html',
+          cover: 0, fileCount: info.files.length,
+          createdAt: Date.now(), updatedAt: Date.now()
+        });
+        stat.down++;
+      } catch (e) {
+        console.warn('raw pull fail', id, e);
+      }
+    }
+
+    // 远端索引落盘（若有变化才写）
+    await this._putJSON('raw/index.json', index);
+    return stat;
+  };
 
   global.PJ = global.PJ || {};
   global.PJ.Sync = Sync;

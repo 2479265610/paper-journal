@@ -100,8 +100,19 @@ async function serveRaw(pathname) {
     });
 
     if (!rec || !rec.blob) {
-      return new Response('纸间：这本书里没有文件「' + p + '」',
-        { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+      const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<body style="font-family:system-ui,'PingFang SC','Microsoft YaHei';background:#efe9dd;color:#2b2723;
+display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+<div style="max-width:420px;padding:28px 34px;background:#fcfaf5;border-radius:12px;
+box-shadow:0 10px 40px rgba(40,32,20,.18);line-height:1.9">
+<p style="margin:0 0 8px;font-size:17px">这本书缺一页：${'`'}${p.replace(/</g,'&lt;')}${'`'}</p>
+<p style="margin:0;font-size:13px;color:#6d655b">导入时需要把网页引用的<b>所有文件一起选中</b>（书架 index.html + 各分册）。
+回到纸间书架，删掉这本网页书后重新导入，把列出的文件一次选全即可。</p>
+</div></body></html>`;
+      return new Response(html, {
+        status: 404,
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
     }
     const ext = p.slice(p.lastIndexOf('.')).toLowerCase();
     return new Response(rec.blob, {

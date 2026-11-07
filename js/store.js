@@ -241,8 +241,14 @@
     },
 
     /* ────────── 原样 HTML 书（raw site） ────────── */
-    /** rec: { id: `${bookId}/${path}`, bookId, path, blob, type, size } */
+    /** rec: { id: `${bookId}/${path}`, bookId, path, blob, type, size, hash? } */
     async putRawFile(rec) {
+      if (!rec.hash) {
+        try {
+          const buf = await rec.blob.arrayBuffer();
+          rec.hash = await sha256(buf);
+        } catch (e) { rec.hash = ''; }
+      }
       await req2p(tx('rawFiles', 'readwrite').objectStore('rawFiles').put(rec));
       return rec;
     },
@@ -262,6 +268,13 @@
       files.forEach(f => t.objectStore('rawFiles').delete(f.id));
       await new Promise((res, rej) => { t.oncomplete = res; t.onerror = () => rej(t.error); });
       return files.length;
+    },
+
+    /** 删除墓碑：网页书删除后跨设备传播（防同步复活） */
+    async getRawTombs() { return this.getMeta('rawTomb', []); },
+    async addRawTomb(bookId) {
+      const t = await this.getRawTombs();
+      if (!t.includes(bookId)) await this.setMeta('rawTomb', [...t, bookId]);
     },
 
     /** 全量导出数据 */

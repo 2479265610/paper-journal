@@ -302,7 +302,10 @@
       [{ label: '取消', value: 0 }, { label: '确认删除', value: 1 }]
     );
     if (!ok) return;
-    if (isHtml) await Store.delRawFiles(b.id);
+    if (isHtml) {
+      await Store.addRawTomb(b.id);   // 删除墓碑：跨设备同步时不再拉回
+      await Store.delRawFiles(b.id);
+    }
     await Store.delBook(b.id);
     await refreshAll();
     shelfIndex = clamp(shelfIndex, 0, S.books.length - 1);
@@ -332,8 +335,20 @@
   }
 
   /** 原样 HTML 书：全屏 iframe 打开（/raw/ 由 Service Worker 提供虚拟文件系统） */
-  function openRawBook(book) {
+  async function openRawBook(book) {
     if (S.editing) { S.editing = false; $('#writerBar').hidden = true; }
+
+    // 打开前确保 SW 已接管（安装/激活有几秒时序，未接管时 /raw/ 会 404）
+    if ('serviceWorker' in navigator && !navigator.serviceWorker.controller) {
+      try {
+        await navigator.serviceWorker.ready;
+        await new Promise((r) => {
+          navigator.serviceWorker.addEventListener('controllerchange', r, { once: true });
+          setTimeout(r, 5000);
+        });
+      } catch (e) { /* ignore */ }
+    }
+
     const url = new URL(
       '/raw/' + book.id + '/' + (book.entryPath ? encodeURI(book.entryPath) : 'index.html'),
       location.href
@@ -997,9 +1012,11 @@
       state.textContent = '正在同步…';
       const st = await Sync.run(msg => { state.textContent = msg; });
       state.className = 'sync-state ok';
-      state.textContent = `同步完成 · 拉取 ${st.pulled} 篇，上传 ${st.pushed} 篇，附件 ${st.mediaUp} 个` +
-        (st.conflicts ? ` · ${st.conflicts} 处冲突已另存副本` : '') +
+      let msg = `同步完成 · 拉取 ${st.pulled} 篇，上传 ${st.pushed} 篇，附件 ${st.mediaUp} 个`;
+      if (st.rawUp || st.rawDown) msg += `\n网页书：上传 ${st.rawUp || 0} 个文件，下载 ${st.rawDown || 0} 本`;
+      msg += (st.conflicts ? `\n${st.conflicts} 处冲突已另存副本` : '') +
         `\n${fmtFull(st.at)} ${fmtTime(st.at)}`;
+      state.textContent = msg;
       await Store.setMeta('lastSync', st.at);
       await refreshAll();
       if (S.view === 'shelf') renderShelf();
@@ -1199,13 +1216,22 @@
         if (pdfs.length === 1) { doImportFile(pdfs[0]); return; }
 
         if (htmls.length === 1) {
-          const choice = await pickOption(
-            `《${htmls[0].name}》怎么导入？`,
-            [
-              { label: '原样成书（推荐）', value: 'raw' },
-              { label: '转成一篇日记', value: 'entry' }
-            ]
-          );
+          // 检测内部引用：引用了其他本地 .html 时引导用户一起选中
+          let refs = [];
+          try { refs = await PJ.Importer.detectRefs(htmls[0]); } catch (e) { /* ignore */ }
+          const choices = [
+            { label: '原样成书（推荐）', value: 'raw' },
+            { label: '转成一篇日记', value: 'entry' }
+          ];
+          let msg = `《${htmls[0].name}》怎么导入？`;
+          if (refs.length) {
+            choices.unshift({ label: '重新选择文件', value: 'again' });
+            msg = `《${htmls[0].name}》还引用了 ${refs.length} 个内部文件` +
+              `（${refs.slice(0, 2).join('、')}${refs.length > 2 ? '…' : ''}）。` +
+              `要完整原样成书，请点「重新选择文件」，把这些文件一起选中。`;
+          }
+          const choice = await pickOption(msg, choices);
+          if (choice === 'again') { PJ.Importer.pickImport(true); return; }
           if (choice === 'entry') { doImportFile(htmls[0]); return; }
         }
         importSiteFlow(htmls);
