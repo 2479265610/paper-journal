@@ -9,5 +9,10 @@ contextBridge.exposeInMainWorld('PJDesktop', {
   /** AI 桥：主进程转来的 MCP 操作 */
   onOp: (cb) => ipcRenderer.on('pj-op', (_e, payload) => cb(payload)),
   opResult: (r) => ipcRenderer.send('pj-op-result', r),
+  /** 日记文件夹导入：选目录 → 返回 { root, mds:[{rel,text}], images:[rel] } */
+  pickDiaryFolder: (presetRoot) => ipcRenderer.invoke('pj:pick-diary-folder', presetRoot),
+  readDiaryMedia: (rel) => ipcRenderer.invoke('pj:read-diary-media', rel),
+  /** 启动参数指定的自动导入目录（PJ_IMPORT_DIR） */
+  onAutoImport: (cb) => ipcRenderer.on('pj:auto-import', (_e, root) => cb(root)),
   isDesktop: true
 });

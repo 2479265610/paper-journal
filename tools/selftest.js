@@ -141,6 +141,26 @@
         log('themeAfterCycle', app.dataset.theme);
         check('主题可切换', app.dataset.theme !== themeBefore);
 
+        /* ══ 书写开关：默认阅读，点笔才写 ══ */
+        try {
+          const S3 = window.__PJ.S;
+          const editBtn = document.querySelector('#btnEdit');
+          if (S3.editing) {
+            editBtn.click();
+            await new Promise(r => setTimeout(r, 900));
+          }
+          check('打开历史日记默认是阅读模式',
+            !S3.editing && !!document.querySelector('#writerBar').hidden && !editBtn.hidden);
+          editBtn.click();
+          await new Promise(r => setTimeout(r, 900));
+          check('点笔进入书写', S3.editing && !document.querySelector('#writerBar').hidden);
+          editBtn.click();
+          await new Promise(r => setTimeout(r, 1000));
+          check('再点笔回到阅读', !S3.editing && !!document.querySelector('#writerBar').hidden);
+        } catch (e) {
+          fail('书写开关异常: ' + (e && e.message));
+        }
+
         /* ══ 左右翻页：滚轮横滑 + 鼠标拖拽（模拟真实事件） ══ */
         try {
           const S2 = window.__PJ.S;
@@ -297,6 +317,23 @@
         } catch (err) {
           fail('导入链路异常: ' + (err && err.message));
           report.errors.push(String(err && err.stack));
+        }
+
+        /* ══ Markdown 文件夹导入结果（若已通过 PJ_IMPORT_DIR 导入） ══ */
+        try {
+          const Store2 = window.PJ.Store;
+          const oct = (await Store2.listBooks()).find(b => b.title === '十月');
+          if (oct) {
+            const es = await Store2.listEntries({ bookId: oct.id });
+            check('「十月」导入 7 篇', es.length === 7, 'len=' + es.length);
+            const withAtt = es.filter(e => (e.attachments || []).length > 0);
+            check('导入的日记带表情包附件', withAtt.length > 0, 'withAtt=' + withAtt.length);
+            log('octAtts', withAtt.map(e => e.day.slice(5) + ':' + e.attachments.length).join(' '));
+          } else {
+            log('octBook', '未导入（跳过）');
+          }
+        } catch (e) {
+          fail('导入结果检查异常: ' + (e && e.message));
         }
 
         /* ══ 原样 HTML 书：站点导入 + SW 虚拟文件系统 ══ */

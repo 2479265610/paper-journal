@@ -78,6 +78,19 @@
       return { id: e.id, day: e.day, title: e.title || '', text: htmlToText(e.body) };
     },
 
+    /** 原始条目（含附件清单），调试与外部工具用 */
+    async 'entries.raw'(a) {
+      const e = await Store.getEntry(a.id);
+      if (!e) throw new Error('找不到日记 ' + a.id);
+      return {
+        id: e.id, day: e.day, title: e.title || '',
+        body: e.body, weather: e.weather || '', tags: e.tags || [],
+        attachments: (e.attachments || []).map(x => ({
+          type: x.type, name: x.name, size: x.size, id: x.mediaId
+        }))
+      };
+    },
+
     async 'entries.write'(a) {
       const books = await Store.listBooks();
       let book = null;

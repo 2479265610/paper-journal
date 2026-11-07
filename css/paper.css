@@ -598,6 +598,22 @@ input, textarea { border: 0; background: none; outline: none; }
   opacity: .65;
 }
 
+/* 书写按钮：阅读态是笔，书写态变对勾（只在阅读页出现） */
+.edit-btn .ic-done { display: none; }
+#app[data-editing="1"] .edit-btn .ic-pen { display: none; }
+#app[data-editing="1"] .edit-btn .ic-done { display: block; }
+#app[data-editing="1"] .edit-btn {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 42%, transparent);
+}
+#app[data-editing="1"] .edit-btn:hover { color: #fff; }
+.edit-btn { animation: editIn .26s cubic-bezier(.3, 1.1, .32, 1) both; }
+@keyframes editIn {
+  from { opacity: 0; transform: scale(.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 /* ══════════ 网页书（原样沉浸视图） ══════════ */
 #app[data-view="raw"] #viewRaw { display: flex; flex-direction: column; }
 .raw-wrap {

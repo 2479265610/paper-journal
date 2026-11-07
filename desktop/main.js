@@ -98,6 +98,12 @@ function createWindow() {
   const extra = process.env.PJ_SELFTEST ? '?selftest=1' : '';
   win.loadURL('app://journal/index.html' + extra);
 
+  // 批量导入：PJ_IMPORT_DIR=<目录> 启动即导入（也可用于命令行批量导入）
+  win.webContents.once('did-finish-load', () => {
+    const dir = process.env.PJ_IMPORT_DIR;
+    if (dir) setTimeout(() => win.webContents.send('pj:auto-import', dir), 1500);
+  });
+
   // 阻止窗口级导航劫持，新窗口一律交给系统浏览器
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/i.test(url)) require('electron').shell.openExternal(url);
@@ -225,6 +231,67 @@ function startApiServer() {
 ipcMain.on('pj-op-result', (_e, r) => {
   const p = pendingOps.get(r && r.id);
   if (p) { pendingOps.delete(r.id); p.resolve(r); }
+});
+
+/* ── 导入：日记文件夹（YYYY-MM-DD.md + 图片） ── */
+let diaryRoot = null;
+const MEDIA_RE = /\.(jpe?g|png|gif|webp|mp4|webm)$/i;
+
+function collectDiaryFolder(root) {
+  const mds = [];
+  const images = [];
+  const walk = (dir, depth) => {
+    if (depth > 4) return;
+    let ents = [];
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const ent of ents) {
+      if (ent.name.startsWith('.') || ent.name === 'node_modules') continue;
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) { walk(p, depth + 1); continue; }
+      const rel = path.relative(root, p).split(path.sep).join('/');
+      if (/\.(md|markdown)$/i.test(ent.name)) {
+        try { mds.push({ rel, text: fs.readFileSync(p, 'utf8') }); } catch (e) { /* skip */ }
+      } else if (MEDIA_RE.test(ent.name)) {
+        images.push(rel);
+      }
+    }
+  };
+  walk(root, 0);
+  return { root, mds, images };
+}
+
+ipcMain.handle('pj:pick-diary-folder', async (e, presetRoot) => {
+  let root = presetRoot;
+  if (!root) {
+    const { dialog } = require('electron');
+    const w = BrowserWindow.fromWebContents(e.sender);
+    const r = await dialog.showOpenDialog(w, {
+      title: '选择日记文件夹（内含 YYYY-MM-DD.md）',
+      properties: ['openDirectory']
+    });
+    if (r.canceled || !r.filePaths[0]) return null;
+    root = r.filePaths[0];
+  }
+  diaryRoot = root;
+  return collectDiaryFolder(root);
+});
+
+ipcMain.handle('pj:read-diary-media', async (_e, rel) => {
+  if (!diaryRoot) return null;
+  const target = path.normalize(path.join(diaryRoot, rel));
+  if (!target.startsWith(path.normalize(diaryRoot))) return null;
+  try {
+    const buf = fs.readFileSync(target);
+    const ext = path.extname(target).toLowerCase();
+    const mime = {
+      '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+      '.gif': 'image/gif', '.webp': 'image/webp',
+      '.mp4': 'video/mp4', '.webm': 'video/webm'
+    }[ext] || 'application/octet-stream';
+    return { b64: buf.toString('base64'), mime };
+  } catch (e) {
+    return null;
+  }
 });
 
 /* ── 单实例锁 ── */

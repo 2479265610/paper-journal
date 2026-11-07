@@ -45,6 +45,10 @@ if (location.search.indexOf('reset') >= 0) {
       </div>
     </div>
     <div class="tb-right">
+      <button class="icon-btn edit-btn" id="btnEdit" aria-label="写" title="继续写这一页" hidden>
+        <svg class="ic-pen" viewBox="0 0 24 24"><path d="M4.5 19.5h4L19 9a2.1 2.1 0 0 0-3-3L5.5 16.5v3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M14.6 6.4 17.6 9.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        <svg class="ic-done" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
       <button class="icon-btn" id="btnSearch" aria-label="搜索">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
       </button>
@@ -305,7 +309,12 @@ if (location.search.indexOf('reset') >= 0) {
           <label>导入文件</label>
           <button class="btn sm" id="btnImportSetting">PDF / HTML</button>
         </div>
-        <p class="hint">PDF 会转换成一本新日记（每一页 = 一页日记，像课本一样翻）；HTML 直接成为一篇日记正文。</p>
+        <div class="row">
+          <label>导入日记文件夹</label>
+          <button class="btn sm" id="btnImportDiarySetting">Markdown</button>
+        </div>
+        <p class="hint">PDF 会转换成一本新日记（每一页 = 一页日记）；HTML 原样成书；
+        Markdown 文件夹（YYYY-MM-DD.md + 图片）会按月自动装订成「十月」「十一月」这样的本子。</p>
       </details>
 
       <details>

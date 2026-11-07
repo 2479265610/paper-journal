@@ -149,6 +149,7 @@
     if (v === 'calendar') { $('#viewTitle').textContent = '日历'; renderCalendar(); }
     if (v === 'gallery') { $('#viewTitle').textContent = '相册'; renderGallery(); }
     if (v === 'search') { $('#viewTitle').textContent = '搜索'; setTimeout(() => $('#searchInput').focus(), 220); }
+    syncEditBtn();
     updateSub();
   }
 
@@ -329,7 +330,10 @@
     await refreshAll();
     shelfIndex = S.books.length - 1;
     renderShelf();
-    toast('日记本已创建');
+    // 新开一本：直接摊开并进入书写，不用再点一次笔
+    await openBook(b.id);
+    await newEntry(b.id);
+    toast('新本子已摊开，直接写吧');
   }
 
   async function renameBook() {
@@ -525,6 +529,15 @@
       if (htmlCache.has(i)) continue;
       htmlCache.set(i, await renderSheet(S.entries[i], { index: i }));
     }
+  }
+
+  function syncEditBtn() {
+    const b = $('#btnEdit');
+    if (!b) return;
+    b.hidden = !(S.view === 'reader' && S.entries.length > 0);
+    document.getElementById('app').dataset.editing = S.editing ? '1' : '';
+    b.title = S.editing ? '完成，回到阅读' : '继续写这一页';
+    b.setAttribute('aria-label', S.editing ? '完成' : '写');
   }
 
   function updatePager() {
@@ -742,6 +755,7 @@
     if (focusEl) focusEl.focus();
     Sound.tap();
     markDirty();
+    syncEditBtn();
   }
 
   async function exitEdit() {
@@ -757,6 +771,7 @@
     Flip.setSpread(html, prev);
     await warmCache();
     updatePager();
+    syncEditBtn();
     Sound.tap();
   }
 
@@ -1350,6 +1365,20 @@
     const startImport = () => {
       Sound.unlock();
       PJ.Importer.onFiles = async (files) => {
+        // 选中 .md（可连同图片一起选）→ 走日记导入
+        const mdFiles = files.filter(f => /\.(md|markdown)$/i.test(f.name));
+        if (mdFiles.length) {
+          const mdsData = [];
+          for (const f of mdFiles) mdsData.push({ rel: f.name, text: await f.text() });
+          const imgsSel = files.filter(f => /\.(jpe?g|png|gif|webp|mp4|webm)$/i.test(f.name));
+          await runImportSource({
+            mds: mdsData,
+            images: imgsSel.map(f => f.name),
+            getImage: async (rel) => imgsSel.find(x => x.name === rel) || null
+          });
+          return;
+        }
+
         const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || f.type === 'application/pdf');
         const htmls = files.filter(f => /\.x?html?$/i.test(f.name) || /html/i.test(f.type || ''));
         if (pdfs.length + htmls.length < files.length) { toast('仅支持 PDF 与 HTML 文件'); return; }
@@ -1382,6 +1411,92 @@
     };
     $('#btnImport').onclick = startImport;
     $('#btnImportSetting').onclick = startImport;
+
+    /* ── 导入日记文件夹：YYYY-MM-DD.md + 图片，按月自动装订 ── */
+    function b64ToBlob(b64, mime) {
+      const bin = atob(b64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      return new Blob([arr], { type: mime || 'application/octet-stream' });
+    }
+
+    async function runImportSource(source) {
+      try {
+        const r = await PJ.Importer.importDiaryFolder(source, { nextCover: S.books.length });
+        await refreshAll();
+        shelfIndex = Math.max(0, S.books.findIndex(b => r.books[0] && b.id === r.books[0].id));
+        renderShelf();
+        toast(`已导入 ${r.entries} 篇日记` +
+          (r.skipped ? `（跳过 ${r.skipped} 篇已存在）` : '') +
+          ` · ${r.books.map(b => b.title).join('、')}`, 4200);
+      } catch (e) {
+        console.warn('diary folder import fail', e);
+        toast('导入失败：' + ((e && e.message) || e).slice(0, 60));
+      }
+    }
+
+    const startDiaryImport = async () => {
+      Sound.unlock();
+      if (window.PJDesktop && window.PJDesktop.pickDiaryFolder) {
+        const res = await window.PJDesktop.pickDiaryFolder();
+        if (!res) return;
+        if (res.mds && !res.mds.length) { toast('这个文件夹里没有 YYYY-MM-DD.md 日记'); return; }
+        await runImportSource({
+          mds: res.mds,
+          images: res.images,
+          getImage: async (rel) => {
+            const x = await window.PJDesktop.readDiaryMedia(rel);
+            return x ? b64ToBlob(x.b64, x.mime) : null;
+          }
+        });
+        return;
+      }
+      // 网页版：选择文件夹（webkitdirectory）
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.webkitdirectory = true;
+      inp.multiple = true;
+      inp.onchange = async () => {
+        const files = Array.from(inp.files || []);
+        const mds = [], imgs = new Map();
+        for (const f of files) {
+          const rel = (f.webkitRelativePath || f.name).split('/').slice(1).join('/');
+          if (/\.(md|markdown)$/i.test(f.name)) mds.push({ rel, text: await f.text() });
+          else if (/\.(jpe?g|png|gif|webp|mp4|webm)$/i.test(f.name)) imgs.set(rel, f);
+        }
+        if (!mds.length) { toast('没有找到 .md 日记文件'); return; }
+        await runImportSource({
+          mds,
+          images: [...imgs.keys()],
+          getImage: async (rel) => imgs.get(rel) || null
+        });
+      };
+      inp.click();
+    };
+
+    const btnDiary = $('#btnImportDiarySetting');
+    if (btnDiary) btnDiary.onclick = startDiaryImport;
+    const btnDiary2 = $('#btnImportDiary');
+    if (btnDiary2) btnDiary2.onclick = startDiaryImport;
+
+    // 启动参数 PJ_IMPORT_DIR：启动即批量导入
+    if (window.PJDesktop && window.PJDesktop.onAutoImport) {
+      window.PJDesktop.onAutoImport(async (root) => {
+        const res = await window.PJDesktop.pickDiaryFolder(root);
+        if (!res || !res.mds || !res.mds.length) {
+          toast('自动导入：该目录没有 .md 日记');
+          return;
+        }
+        await runImportSource({
+          mds: res.mds,
+          images: res.images,
+          getImage: async (rel) => {
+            const x = await window.PJDesktop.readDiaryMedia(rel);
+            return x ? b64ToBlob(x.b64, x.mime) : null;
+          }
+        });
+      });
+    }
 
     // 滚轮 / 触控板翻页：横滑直接翻；纵滚到页底（页顶）再继续才翻
     let readWheelAt = 0;
@@ -1471,20 +1586,15 @@
 
     // 页面交互（事件委托）
     $('#leafFront').addEventListener('click', onSheetClick);
-    $('#leafFront').addEventListener('dblclick', (ev) => {
-      if (S.editing) return;
-      if (ev.target.closest('[data-act]')) return;
-      enterEdit();
-    });
 
-    // 点击正文进入编辑
-    $('#book').addEventListener('click', (ev) => {
-      if (S.editing) return;
-      const body = ev.target.closest('.sh-body, .sh-title');
-      if (!body) return;
-      if (ev.target.closest('a')) return;
-      enterEdit();
-    });
+    // 书写开关：阅读是默认状态，点右上角的笔才进入书写
+    const toggleEditMode = async () => {
+      if (S.view !== 'reader' || !S.entries.length) return;
+      Sound.unlock(); Sound.tap();
+      if (S.editing) await exitEdit();
+      else await enterEdit();
+    };
+    $('#btnEdit').onclick = toggleEditMode;
 
     // 键盘
     document.addEventListener('keydown', (ev) => {
@@ -1511,7 +1621,12 @@
       }
       if (ev.key === 'ArrowLeft') { ev.preventDefault(); goPrev(); }
       if (ev.key === 'ArrowRight') { ev.preventDefault(); goNext(); }
-      if (ev.key === 'e' || ev.key === 'Enter') { ev.preventDefault(); enterEdit(); }
+      // 书写入口只走右上角的笔（或 Ctrl/⌘+E），避免翻页手滑误触进入编辑
+      if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'e') {
+        ev.preventDefault();
+        toggleEditMode();
+        return;
+      }
       if (ev.key === 'Escape') { if (S.editing) exitEdit(); else setView('shelf'); }
       if (ev.key === 'n' || ev.key === 'N') { ev.preventDefault(); newEntry(S.bookId); }
     });

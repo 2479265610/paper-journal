@@ -7,7 +7,7 @@
 (function (global) {
   'use strict';
 
-  const { Store, uid, dayKey, sanitize, toast, fmtBytes } = global.PJ;
+  const { Store, uid, dayKey, sanitize, toast, fmtBytes, escapeHtml, wordCount } = global.PJ;
 
   /* ── 进度框 ── */
   function ipShow(title) {
@@ -301,12 +301,163 @@
     } catch (e) { return []; }
   }
 
+  /* ── 日记文件夹（YYYY-MM-DD.md + 图片）→ 按月分本 ── */
+  const MONTH_CN = ['一月', '二月', '三月', '四月', '五月', '六月',
+    '七月', '八月', '九月', '十月', '十一月', '十二月'];
+
+  /** 解析单篇：
+   *  # 2026-10-25　10 月 25 日
+   *  > 星期日 · ⛅ 多云 16~27℃ · 528 字
+   *  正文段落…
+   *  ---
+   *  **当天配图**
+   *  ![表情](emojis/r_xxx.gif)
+   */
+  function parseDiaryMD(text) {
+    const src = String(text || '');
+    const m = src.match(/^#\s*(\d{4}-\d{2}-\d{2})[\s\u3000]*(.*)$/m);
+    if (!m) return null;
+    const day = m[1];
+    const label = (m[2] || '').trim();
+
+    let weather = '', week = '';
+    const meta = src.match(/^>\s*(.+)$/m);
+    if (meta) {
+      for (const part of meta[1].split('·').map(s => s.trim())) {
+        if (!part) continue;
+        if (part.includes('星期')) week = part;
+        else if (/[℃cC]|晴|多云|阴|雨|雪|风|雾/.test(part) && !/字$/.test(part)) weather = part;
+      }
+    }
+
+    let rest = src.slice(m.index + m[0].length);
+    rest = rest.split(/^---$/m)[0];
+    rest = rest.replace(/^>.*$/gm, '').replace(/^\*\*当天配图\*\*\s*$/gm, '');
+
+    const paras = rest.split('\n')
+      .map(l => l.trim())
+      .filter(l => l && !/^!\[/.test(l) && !/^#{1,6}\s/.test(l) && l !== '---');
+
+    const images = [...src.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)]
+      .map(mm => mm[1].trim())
+      .filter(u => u && !/^https?:/i.test(u));
+
+    const bodyHtml = paras.map(p => `<p>${escapeHtml(p)}</p>`).join('');
+    return { day, label, week, weather, bodyHtml, images, words: wordCount(bodyHtml) };
+  }
+
+  /**
+   * 导入文件夹：source = { mds:[{rel,text}], images:[rel], getImage: async rel => Blob }
+   * 按月份自动装订成「十月」「十一月」这样的本子；同一天已存在的会跳过。
+   */
+  async function importDiaryFolder(source, opts) {
+    opts = opts || {};
+    ipShow('正在导入日记');
+
+    const parsed = [];
+    for (const md of (source.mds || [])) {
+      try {
+        const p = parseDiaryMD(md.text);
+        if (p) parsed.push(p);
+      } catch (e) { /* 跳过坏文件 */ }
+    }
+    if (!parsed.length) {
+      ipHide();
+      throw new Error('没有找到 YYYY-MM-DD.md 格式的日记');
+    }
+
+    // 图片索引：优先原始相对路径，其次按文件名兜底（选的根目录可能高一两层）
+    const imgSet = source.images instanceof Set ? source.images : new Set(source.images || []);
+    const byBase = new Map();
+    for (const rel of imgSet) byBase.set(rel.split('/').pop(), rel);
+    const resolveImg = (u) => {
+      const clean = u.replace(/^\.\//, '');
+      if (imgSet.has(clean)) return clean;
+      return byBase.get(clean.split('/').pop()) || null;
+    };
+
+    const groups = new Map();
+    for (const p of parsed) {
+      const ym = p.day.slice(0, 7);
+      if (!groups.has(ym)) groups.set(ym, []);
+      groups.get(ym).push(p);
+    }
+
+    const books = [];
+    let done = 0, made = 0, skipped = 0;
+    const total = parsed.length;
+
+    for (const ym of [...groups.keys()].sort()) {
+      const list = groups.get(ym).sort((a, b) => a.day.localeCompare(b.day));
+      const mm = parseInt(ym.slice(5, 7), 10);
+      const title = MONTH_CN[mm - 1] || ym;
+
+      let book = (await Store.listBooks()).find(b => b.title === title && b.kind !== 'html');
+      if (!book) {
+        book = {
+          id: uid(), title,
+          cover: (opts.nextCover || 0) + books.length,
+          createdAt: Date.now(), updatedAt: Date.now()
+        };
+        await Store.putBook(book);
+      }
+      books.push({ id: book.id, title, count: list.length });
+
+      const existing = new Set((await Store.listEntries({ bookId: book.id })).map(e => e.day));
+
+      for (const p of list) {
+        done++;
+        ipUpdate(done / total, `${p.day}　${done} / ${total} 篇`);
+        await new Promise(r => setTimeout(r, 0));
+
+        if (existing.has(p.day)) { skipped++; continue; }
+
+        const atts = [];
+        for (const u of p.images) {
+          const rel = resolveImg(u);
+          if (!rel) continue;
+          try {
+            const blob = await source.getImage(rel);
+            if (!blob) continue;
+            const fname = rel.split('/').pop();
+            const file = new File([blob], fname, { type: blob.type || guessType(rel) });
+            const m = await Store.putMedia(file);
+            atts.push({
+              id: uid(),
+              type: /\.(mp4|webm)$/i.test(rel) ? 'video' : 'image',
+              mediaId: m.id, name: fname, size: file.size
+            });
+          } catch (e) { /* 单张失败不影响整篇 */ }
+        }
+
+        const ts = new Date(p.day + 'T20:00:00').getTime();
+        await Store.putEntry({
+          id: uid(),
+          bookId: book.id,
+          day: p.day,
+          ts: Number.isFinite(ts) ? ts : Date.now(),
+          title: '',
+          body: p.bodyHtml,
+          attachments: atts,
+          tags: [], mood: '',
+          weather: p.weather || '',
+          starred: 0,
+          createdAt: Date.now(), updatedAt: Date.now()
+        });
+        made++;
+      }
+    }
+
+    ipHide();
+    return { books, entries: made, skipped, total };
+  }
+
   /* ── 文件选择器（供按钮调用） ── */
   function pickImport(multiple) {
     const inp = document.createElement('input');
     inp.type = 'file';
     inp.multiple = !!multiple;
-    inp.accept = '.pdf,.htm,.html,application/pdf,text/html';
+    inp.accept = '.pdf,.htm,.html,.md,.markdown,application/pdf,text/html,text/markdown';
     inp.onchange = () => {
       if (inp.files && inp.files.length && Importer.onFiles) {
         Importer.onFiles(Array.from(inp.files));
@@ -315,7 +466,11 @@
     inp.click();
   }
 
-  const Importer = { importFiles, importSite, pickImport, detectRefs, onFiles: null };
+  const Importer = {
+    importFiles, importSite, pickImport, detectRefs,
+    importDiaryFolder, parseDiaryMD,
+    onFiles: null
+  };
   global.PJ = global.PJ || {};
   global.PJ.Importer = Importer;
 })(window);
