@@ -424,7 +424,7 @@
 
     await showCover(bookUsedForCover);
     if (S.entries.length) await renderCurrent(true);
-    else Flip.setPage(emptySheetHTML());
+    else Flip.setSpread(emptySheetHTML(), blankLeafHTML());
 
     await sleep(150);
     await openCover();
@@ -432,6 +432,17 @@
     updateSub();
   }
 
+  /** 扉页（跨页左侧没有内容时） */
+  function blankLeafHTML() {
+    return `<div class="sheet">
+      <div class="sheet-empty">
+        <div class="se-ico">❊</div>
+        <div class="se-text">扉页</div>
+      </div>
+    </div>`;
+  }
+
+  /** 空本子的第一页 */
   function emptySheetHTML() {
     return `<div class="sheet">
       <div class="sheet-empty">
@@ -451,6 +462,7 @@
       getNextHTML: () => htmlCache.get(S.idx + 1) || '',
       getPrevHTML: () => htmlCache.get(S.idx - 1) || '',
       getUnderHTML: (dir) => htmlCache.get(S.idx + dir) || '',
+      getPriorHTML: () => htmlCache.get(S.idx - 2) || '',
       onFlip: (dir) => onFlipDone(dir),
       // 连点连翻：弹簧动画落定后立即处理排队的那一次
       onQueued: (dir) => { dir > 0 ? goNext() : goPrev(); }
@@ -462,26 +474,42 @@
     S.idx = clamp(S.idx + dir, 0, Math.max(0, S.entries.length - 1));
     Sound.rustle({ strength: 0.5, low: dir < 0 });
     await warmCache();
+    await paintSpread();
     updatePager();
     updateSub();
   }
 
-  async function renderCurrent(fresh) {
-    const e = S.entries[S.idx];
-    const html = await renderSheet(e, { fresh });
-    htmlCache.set(S.idx, html);
-    Flip.setPage(html);
+  /** 取某一页的 HTML（带缓存） */
+  async function getPageHTML(i, fresh) {
+    const e = S.entries[i];
+    if (!e) return emptySheetHTML();
+    if (!fresh && htmlCache.has(i)) return htmlCache.get(i);
+    const h = await renderSheet(e, { fresh, index: i });
+    htmlCache.set(i, h);
+    return h;
+  }
+
+  /** 绘制跨页：右页 = 当前，左页 = 上一篇（没有就扉页） */
+  async function paintSpread() {
+    const cur = S.entries.length ? await getPageHTML(S.idx) : emptySheetHTML();
+    const prev = S.idx > 0 ? await getPageHTML(S.idx - 1) : blankLeafHTML();
+    Flip.setSpread(cur, prev);
     Flip.setUnder('');
+  }
+
+  async function renderCurrent(fresh) {
+    if (fresh) htmlCache.delete(S.idx);
+    await paintSpread();
     await warmCache();
     updatePager();
     updateSub();
   }
 
   async function warmCache() {
-    for (const i of [S.idx - 1, S.idx + 1]) {
+    for (const i of [S.idx - 2, S.idx - 1, S.idx + 1]) {
       if (i < 0 || i >= S.entries.length) continue;
       if (htmlCache.has(i)) continue;
-      htmlCache.set(i, await renderSheet(S.entries[i]));
+      htmlCache.set(i, await renderSheet(S.entries[i], { index: i }));
     }
   }
 
@@ -500,52 +528,102 @@
   async function goNext() {
     if (S.editing || S.idx >= S.entries.length - 1) return;
     await ensureFlip();
-    if (!htmlCache.has(S.idx + 1)) htmlCache.set(S.idx + 1, await renderSheet(S.entries[S.idx + 1]));
+    const next = await getPageHTML(S.idx + 1);
     Sound.rustle({ strength: 0.7 });
-    Flip.goNext(htmlCache.get(S.idx + 1), htmlCache.get(S.idx + 1), async () => {
-      await onFlipDone(1);
-    });
+    Flip.goNext(next, next, async () => { await onFlipDone(1); });
   }
 
   async function goPrev() {
     if (S.editing || S.idx <= 0) return;
     await ensureFlip();
-    if (!htmlCache.has(S.idx - 1)) htmlCache.set(S.idx - 1, await renderSheet(S.entries[S.idx - 1]));
+    const prev = await getPageHTML(S.idx - 1);
+    const prior = S.idx - 2 >= 0 ? await getPageHTML(S.idx - 2) : emptySheetHTML();
     Sound.rustle({ strength: 0.55, low: true });
-    Flip.goPrev(htmlCache.get(S.idx - 1), htmlCache.get(S.idx - 1), async () => {
-      await onFlipDone(-1);
-    });
+    Flip.goPrev(prev, prior, async () => { await onFlipDone(-1); });
   }
 
   /* ══════════ 页面渲染 ══════════ */
+  /** 把附件图片内嵌到正文段落之间（浮动，文字环绕） */
+  async function inlineFigureHTML(imgs) {
+    const figs = [];
+    for (let i = 0; i < imgs.length; i++) {
+      const u = await mediaURL(imgs[i].mediaId);
+      figs.push(`<figure class="pg-fig${i % 2 ? ' alt' : ''}">${u
+        ? `<img src="${u}" alt="" loading="lazy">`
+        : '<div class="att-empty">照片待同步</div>'}</figure>`);
+    }
+    return figs;
+  }
+
+  function weaveFigures(bodyHtml, figs) {
+    if (!figs.length) return bodyHtml || '';
+    const tmp = document.createElement('div');
+    tmp.innerHTML = bodyHtml || '';
+    const nodes = Array.from(tmp.childNodes);
+    const out = [];
+    let fi = 0, pCount = 0;
+
+    for (const node of nodes) {
+      if (node.nodeType === 3) {
+        const t = (node.textContent || '').trim();
+        if (t) out.push(`<p>${escapeHtml(t)}</p>`);
+        continue;
+      }
+      out.push(node.outerHTML);
+      if (node.nodeType === 1 && ['P', 'DIV'].includes(node.tagName)) {
+        pCount++;
+        if (fi < figs.length && pCount % 2 === 0) out.push(figs[fi++]);
+      }
+    }
+    while (fi < figs.length) out.push(figs[fi++]);
+    return out.join('');
+  }
+
   async function renderSheet(e, opt) {
     opt = opt || {};
     if (!e) return emptySheetHTML();
     const d = new Date(e.ts);
-    const attHTML = await renderAttachments(e);
+    const wc = wordCount(e.body);
+    const total = S.entries.length || 1;
+    const num = typeof opt.index === 'number' ? `${opt.index + 1} / ${total}` : '';
 
     const tags = (e.tags || []).map(t => `<span class="sf-tag" data-tag="${escapeHtml(t)}">#${escapeHtml(t)}</span>`).join('');
-    const wc = wordCount(e.body);
 
-    return `<div class="sheet${opt.fresh ? ' enter' : ''}" data-id="${e.id}">
-      <div class="sheet-head">
-        <div class="sh-date">
-          <span class="sh-day">${d.getDate()}</span>
-          <span class="sh-ym">${d.getFullYear()} · ${MON[d.getMonth()]}</span>
-          <span class="sh-week">${WEEK[d.getDay()]} ${e.mood || ''} ${e.weather || ''}</span>
+    const allAtts = e.attachments || [];
+    const imgs = allAtts.filter(a => a.type === 'image');
+    const others = allAtts.filter(a => a.type !== 'image');
+
+    // 编辑态把图片留在文末（可删除），阅读态内嵌到正文里环绕排版
+    let bodyHtml = e.body || '';
+    let attHTML = '';
+    if (S.editing) {
+      attHTML = await renderAttachments(e);
+    } else {
+      const figs = await inlineFigureHTML(imgs);
+      bodyHtml = weaveFigures(bodyHtml, figs);
+      attHTML = others.length
+        ? await renderAttachments(Object.assign({}, e, { attachments: others }))
+        : '';
+    }
+
+    return `<div class="sheet" data-id="${e.id}">
+      <header class="pg-head">
+        <h2 class="pg-date">${d.getMonth() + 1} 月 ${d.getDate()} 日</h2>
+        <div class="pg-meta">
+          <span class="pg-chip">${WEEK[d.getDay()]}</span>
+          ${e.mood ? `<span class="pg-chip">${escapeHtml(e.mood)}</span>` : ''}
+          ${e.weather ? `<span class="pg-chip">${escapeHtml(e.weather)}</span>` : ''}
+          ${wc ? `<span class="pg-chip">${wc} 字</span>` : ''}
         </div>
-        <div class="sh-line"></div>
-        <h2 class="sh-title" data-ed="title">${escapeHtml(e.title || '')}</h2>
-      </div>
-      <div class="sh-body" data-ed="body">${e.body || ''}</div>
+      </header>
+      <h3 class="pg-title" data-ed="title">${escapeHtml(e.title || '')}</h3>
+      <div class="sh-body" data-ed="body">${bodyHtml}</div>
       ${attHTML}
-      <div class="sheet-foot">
+      <footer class="pg-foot">
         ${tags}
         ${e.starred ? '<span style="color:var(--accent)">★</span>' : ''}
-        <span class="sf-spacer"></span>
-        ${wc ? `<span class="sf-num">${wc} 字</span>` : ''}
-        <span class="sf-num">${fmtTime(e.ts)}</span>
-      </div>
+        <span class="pg-num">${num}</span>
+      </footer>
     </div>`;
   }
 
@@ -634,19 +712,21 @@
     if (!S.entries.length) return;
     if (S.editing) return;
     S.editing = true;
-    const html = await renderSheet(S.entries[S.idx]);
-    Flip.setPage(html);
+    const html = await renderSheet(S.entries[S.idx], { index: S.idx });
+    const prev = S.idx > 0 ? await getPageHTML(S.idx - 1) : blankLeafHTML();
+    Flip.setSpread(html, prev);
     const sheet = $('#leafFront .sheet');
     if (!sheet) return;
-    const title = sheet.querySelector('.sh-title');
+    const title = sheet.querySelector('.pg-title');
     const body = sheet.querySelector('.sh-body');
-    title.setAttribute('contenteditable', 'true');
-    body.setAttribute('contenteditable', 'true');
+    if (title) title.setAttribute('contenteditable', 'true');
+    if (body) body.setAttribute('contenteditable', 'true');
     $('#writerBar').hidden = false;
     updatePager();
     syncMetaChips();
     readMetaFromDom();
-    (body.textContent.trim() ? body : title).focus();
+    const focusEl = (body && body.textContent.trim()) ? body : (title || body);
+    if (focusEl) focusEl.focus();
     Sound.tap();
     markDirty();
   }
@@ -657,9 +737,11 @@
     S.editing = false;
     $('#writerBar').hidden = true;
     const e = S.entries[S.idx];
-    const html = await renderSheet(e);
+    htmlCache.delete(S.idx);
+    const html = await renderSheet(e, { index: S.idx });
     htmlCache.set(S.idx, html);
-    Flip.setPage(html);
+    const prev = S.idx > 0 ? await getPageHTML(S.idx - 1) : blankLeafHTML();
+    Flip.setSpread(html, prev);
     await warmCache();
     updatePager();
     Sound.tap();
@@ -676,10 +758,10 @@
     if (!sheet) return;
     const e = S.entries[S.idx];
     if (!e) return;
-    const t = sheet.querySelector('.sh-title');
+    const t = sheet.querySelector('.pg-title');
     const b = sheet.querySelector('.sh-body');
-    const newTitle = (t.innerText || '').replace(/\n+/g, ' ').trim();
-    const newBody = sanitize(b.innerHTML);
+    const newTitle = (t ? t.innerText : '').replace(/\n+/g, ' ').trim();
+    const newBody = sanitize(b ? b.innerHTML : '');
     if (newTitle === (e.title || '') && newBody === (e.body || '')) return;
     e.title = newTitle;
     e.body = newBody;

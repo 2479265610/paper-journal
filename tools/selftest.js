@@ -86,6 +86,23 @@
         check('渲染出纸页', !!sheet);
         log('pageIndicator', (document.querySelector('#pageIndicator') || {}).textContent);
 
+        /* 跨页几何：纸宽应正好是半本宽，左页同理 */
+        const bookEl = document.querySelector('#book');
+        const leafEl = document.querySelector('#leaf');
+        const leftEl = document.querySelector('#pageLeft');
+        const bw = bookEl ? bookEl.getBoundingClientRect().width : 0;
+        const lw = leafEl ? leafEl.getBoundingClientRect().width : 0;
+        const plw = leftEl ? leftEl.getBoundingClientRect().width : 0;
+        log('spreadGeom', `book=${Math.round(bw)} leaf=${Math.round(lw)} left=${Math.round(plw)}`);
+        check('双页：纸宽 = 半本宽', bw > 200 && Math.abs(lw - bw / 2) < 6, `${Math.round(bw)}/${Math.round(lw)}`);
+        check('双页：左页宽 = 半本宽', bw > 200 && Math.abs(plw - bw / 2) < 6, `${Math.round(plw)}`);
+        check('左页有内容', !!document.querySelector('#pageLeft .sheet'));
+        check('侧边翻页按钮', !!document.querySelector('.side-btn.left') && !!document.querySelector('.side-btn.right'));
+        check('页内版式（日期/胶囊/页码）',
+          !!document.querySelector('#leafFront .pg-date') &&
+          document.querySelectorAll('#leafFront .pg-chip').length >= 1 &&
+          !!document.querySelector('#leafFront .pg-num'));
+
         const cover = document.querySelector('#bookCover');
         log('coverHidden', cover && cover.hidden);
         log('coverOpen', cover && cover.classList.contains('open'));
@@ -173,8 +190,8 @@
           await window.__PJ.openEntry(e);
           await new Promise(r => setTimeout(r, 800));
 
-          check('照片渲染出 <img>', !!document.querySelector('#leafFront .att-img img'));
-          const imgEl = document.querySelector('#leafFront .att-img img');
+          check('照片渲染出 <img>', !!document.querySelector('#leafFront .pg-fig img, #leafFront .att-img img'));
+          const imgEl = document.querySelector('#leafFront .pg-fig img, #leafFront .att-img img');
           log('imgSrc', imgEl && imgEl.getAttribute('src'));
           check('PDF 卡片渲染', !!document.querySelector('#leafFront .att-file .af-ico.pdf'));
           check('HTML 沙箱 iframe 渲染', !!document.querySelector('#leafFront .att-html iframe'));

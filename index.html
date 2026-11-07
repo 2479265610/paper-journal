@@ -88,12 +88,13 @@ if (location.search.indexOf('reset') >= 0) {
   <!-- ══════════ 2. 阅读 / 书写 ══════════ -->
   <section class="view" id="viewReader">
     <div class="book" id="book">
-      <div class="book-spine"></div>
+      <div class="page-left" id="pageLeft"></div>
       <div class="page-under" id="pageUnder"></div>
       <div class="leaf" id="leaf">
         <div class="leaf-face leaf-front" id="leafFront"></div>
         <div class="leaf-face leaf-back" id="leafBack"></div>
       </div>
+      <div class="spine-gap" aria-hidden="true"></div>
       <div class="flip-shadow" id="flipShadow"></div>
       <div class="corner" id="corner"></div>
 
@@ -107,22 +108,26 @@ if (location.search.indexOf('reset') >= 0) {
         <div class="bcv-edge"></div>
       </div>
 
-      <!-- 左右边缘点击热区 -->
+      <!-- 左右翻页：悬浮在书页外侧 -->
+      <button class="side-btn left" id="btnPrev" aria-label="上一页">
+        <svg viewBox="0 0 24 24"><path d="M14.5 6 8.5 12l6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>上一页</span>
+      </button>
+      <button class="side-btn right" id="btnNext" aria-label="下一页">
+        <span>下一页</span>
+        <svg viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+
+      <!-- 书页左右边缘点击热区（透明） -->
       <button class="edge-zone left" id="edgePrev" aria-label="上一页"></button>
       <button class="edge-zone right" id="edgeNext" aria-label="下一页"></button>
     </div>
 
     <nav class="pager" id="pager">
-      <button class="pg-btn" id="btnPrev" aria-label="上一页">
-        <svg viewBox="0 0 24 24"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
       <div class="pg-mid">
         <span id="pageIndicator">1 / 1</span>
         <span class="pg-dot" id="pgDot"></span>
       </div>
-      <button class="pg-btn" id="btnNext" aria-label="下一页">
-        <svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
     </nav>
   </section>
 

@@ -1,23 +1,22 @@
 /* ═══════════════════════════════════════════════
-   flip.js — 3D 纸张翻页引擎（弹簧物理版）
-   · 半隐式欧拉弹簧积分（Apple 弹簧参数映射）
-   · 拖拽跟手 / 松手速度移交 / 动量投射判定
-   · 动画可中断：连点连翻（队列）
-   · 拖拽回弹同样携带松手速度，纸面回弹自然
+   flip.js — 3D 翻页引擎（双页摊开 · 弹簧物理）
+   几何：纸绕中缝（书脊）翻转
+     · 下一页：纸在右半，绕左边缘（中缝）0° → -180°，落在左半
+     · 上一页：纸在左半，绕右边缘（中缝）0° → -180°，落回右半
+   窄屏退化为单页翻页（纸占满整页，走独立分支）
+   弹簧：Apple 参数（ζ=0.8/0.5s），拖拽松手速度移交 + 动量投射
    ═══════════════════════════════════════════════ */
 (function (global) {
   'use strict';
 
   const { clamp } = global.PJ;
 
-  // Apple 官方参数映射：response(s) → 自然频率；zeta → 阻尼比
   const SPRING = {
-    flip:   { zeta: 0.8,  response: 0.5  },  // 旋转动画：少量过冲，纸的"落定"感
-    settle: { zeta: 0.9,  response: 0.42 },  // 回弹：更收敛
-    cover:  { zeta: 0.8,  response: 0.6  }   // 封面：更大更慢
+    flip:   { zeta: 0.8, response: 0.5 },
+    settle: { zeta: 0.9, response: 0.42 }
   };
-  const THRESHOLD = 0.26;   // 位移阈值
-  const MOMENTUM = 0.42;    // 动量投射系数（0.998 速率的等效位移秒数）
+  const THRESHOLD = 0.26;
+  const MOMENTUM = 0.42;
 
   class Flip {
     constructor(bookEl, opts) {
@@ -26,6 +25,7 @@
       this.leaf = bookEl.querySelector('.leaf');
       this.front = bookEl.querySelector('.leaf-front');
       this.back = bookEl.querySelector('.leaf-back');
+      this.left = bookEl.querySelector('.page-left');
       this.under = bookEl.querySelector('.page-under');
       this.shadow = bookEl.querySelector('.flip-shadow');
 
@@ -43,8 +43,11 @@
       this._bindDrag();
     }
 
+    get spread() { return global.innerWidth > 820; }
+
     /* ── 内容 ── */
     _set(el, html) {
+      if (!el) return;
       el.innerHTML = (html || '') + '<div class="curve"></div>';
     }
 
@@ -56,31 +59,33 @@
 
       const shade = Math.sin(p * Math.PI);
       if (this.shadow) {
-        this.shadow.style.opacity = (shade * 0.62).toFixed(3);
-        this.shadow.style.transform = `scaleX(${(1 - shade * 0.12).toFixed(3)})`;
+        this.shadow.style.opacity = (shade * 0.5).toFixed(3);
       }
       this.leaf.style.boxShadow =
-        `${(-16 * shade).toFixed(1)}px 0 ${(34 * shade).toFixed(0)}px rgba(45,35,20,${(0.24 * shade).toFixed(3)})`;
+        `${(-14 * shade).toFixed(1)}px 0 ${(30 * shade).toFixed(0)}px rgba(45,35,20,${(0.22 * shade).toFixed(3)})`;
     }
 
-    setPage(html) {
+    /** 设置跨页：右页（当前页）+ 左页（上一篇） */
+    setSpread(currentHTML, leftHTML) {
       this._cancel();
-      this._curHTML = html || '';
+      this._curHTML = currentHTML || '';
+      this.leaf.classList.remove('to-left');
       this._set(this.front, this._curHTML);
       this._set(this.back, '');
+      this._set(this.left, leftHTML || '');
+      this._set(this.under, '');
       this._apply(0);
       this.busy = false;
     }
 
-    setUnder(html) {
-      if (this.under) this.under.innerHTML = html || '';
-    }
+    /** 兼容旧调用：只设右页 */
+    setPage(html) { this.setSpread(html, ''); }
+    setUnder(html) { this._set(this.under, html || ''); }
 
     _cancel() {
       if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
     }
 
-    /* ── 弹簧积分（半隐式欧拉，支持初速度 = 速度移交） ── */
     _spring(from, to, v0, cfg, cb) {
       this._cancel();
       this.leaf.style.transition = 'none';
@@ -92,9 +97,9 @@
         return;
       }
 
-      const w0 = (2 * Math.PI) / cfg.response;      // 自然频率 rad/s
-      const k = w0 * w0;                             // 刚度（质量=1）
-      const c = 2 * cfg.zeta * w0;                   // 阻尼
+      const w0 = (2 * Math.PI) / cfg.response;
+      const k = w0 * w0;
+      const c = 2 * cfg.zeta * w0;
 
       let x = from;
       let v = v0 || 0;
@@ -102,7 +107,7 @@
       let elapsed = 0;
 
       const step = (now) => {
-        const dt = Math.min((now - last) / 1000, 1 / 30);  // 步长上限防穿透
+        const dt = Math.min((now - last) / 1000, 1 / 30);
         last = now;
         elapsed += dt;
 
@@ -111,11 +116,7 @@
         x += v * dt;
         this._apply(x);
 
-        // 收敛：接近目标且速度衰减
-        const settled = Math.abs(x - to) < 0.2 && Math.abs(v) < 15;
-        // 兜底：极端参数下防永不收敛
-        const timeout = elapsed > 2.2;
-        if (settled || timeout) {
+        if ((Math.abs(x - to) < 0.2 && Math.abs(v) < 15) || elapsed > 2.2) {
           this._apply(to);
           this.busy = false;
           cb && cb();
@@ -126,12 +127,14 @@
       this.raf = requestAnimationFrame(step);
     }
 
-    /* ── 下一页（按钮 / 键盘 / 队列）。busy 时排队 → 连点连翻 ── */
+    /* ── 下一页：纸从右翻到左 ── */
     goNext(nextHTML, underHTML, cb) {
       if (this.busy) { this._queued++; this._pendingDir = 1; return true; }
       this.busy = true;
+
+      this.leaf.classList.remove('to-left');
       this._set(this.back, nextHTML);
-      if (underHTML != null) this.setUnder(underHTML);
+      if (underHTML != null) this._set(this.under, underHTML);
       this._apply(0);
 
       this._spring(0, -180, 0, SPRING.flip, () => {
@@ -145,20 +148,35 @@
       return true;
     }
 
-    /* ── 上一页 ── */
-    goPrev(prevHTML, underHTML, cb) {
+    /* ── 上一页：纸从左翻回右 ── */
+    goPrev(prevHTML, priorHTML, cb) {
       if (this.busy) { this._queued++; this._pendingDir = -1; return true; }
+
+      if (!this.spread) {
+        this.busy = true;
+        this.leaf.classList.remove('to-left');
+        this._set(this.back, this._curHTML);
+        this._set(this.front, prevHTML);
+        this._apply(-180);
+        this._spring(-180, 0, 0, SPRING.flip, () => {
+          this._curHTML = prevHTML || '';
+          this._set(this.back, '');
+          cb && cb();
+          this._drainQueue();
+        });
+        return true;
+      }
+
       this.busy = true;
-
-      // 当前页瞬时摆到背面：-180 时视觉内容不变，无闪烁
-      this._set(this.back, this._curHTML);
+      // 纸移到左半，正面盖住左页（内容相同，无闪烁），翻过中缝后背面仍是这一页
+      this.leaf.classList.add('to-left');
       this._set(this.front, prevHTML);
-      if (underHTML != null) this.setUnder(underHTML);
-      this._apply(-180);
+      this._set(this.back, prevHTML);
+      if (priorHTML != null) this._set(this.left, priorHTML);
+      this._apply(0);
 
-      this._spring(-180, 0, 0, SPRING.flip, () => {
+      this._spring(0, -180, 0, SPRING.flip, () => {
         this._curHTML = prevHTML || '';
-        this._set(this.back, '');
         cb && cb();
         this._drainQueue();
       });
@@ -169,23 +187,22 @@
       if (this._queued > 0) {
         this._queued--;
         const dir = this._pendingDir || 1;
-        setTimeout(() => {
-          this.opts.onQueued && this.opts.onQueued(dir);
-        }, 24);
+        setTimeout(() => { this.opts.onQueued && this.opts.onQueued(dir); }, 24);
       }
     }
 
     /* ── 拖拽 ── */
     _bindDrag() {
-      let active = false, dir = 0, startX = 0, startY = 0, W = 1;
+      let active = false, dir = 0, startX = 0, startY = 0, span = 1;
       let moved = false;
-      let lastT = 0, lastAngle = 0, vel = 0;   // deg/s
+      let lastT = 0, lastAngle = 0, vel = 0;
+      let fromAngle = 0, toAngle = 0;
 
       const down = (e) => {
         if (this.busy) return;
         active = true; dir = 0; moved = false; vel = 0;
         startX = e.clientX; startY = e.clientY;
-        W = this.book.clientWidth || 1;
+        span = this.spread ? (this.book.clientWidth / 2) : this.book.clientWidth;
         lastT = performance.now();
         lastAngle = this.angle;
       };
@@ -205,23 +222,20 @@
             : (this.opts.canPrev && this.opts.canPrev());
           if (!can) { active = false; return; }
           this.busy = true;
+          fromAngle = (!this.spread && dir === -1) ? -180 : 0;
+          toAngle = (!this.spread && dir === -1) ? 0 : -180;
           this._prepare(dir);
         }
 
-        const p = dir === 1
-          ? clamp(-dx / (W * 0.92), 0, 1)
-          : clamp(dx / (W * 0.92), 0, 1);
+        const p = clamp(Math.abs(dx) / span, 0, 1);
+        this._apply(fromAngle + (toAngle - fromAngle) * p);
 
-        const angle = dir === 1 ? -180 * p : -180 + 180 * p;
-        this._apply(angle);
-
-        // 角速度采样（deg/s）
         const now = performance.now();
         const dt = now - lastT;
         if (dt > 12) {
-          const inst = (angle - lastAngle) / (dt / 1000);
-          vel = vel * 0.72 + inst * 0.28;    // 平滑
-          lastAngle = angle;
+          const inst = (this.angle - lastAngle) / (dt / 1000);
+          vel = vel * 0.72 + inst * 0.28;
+          lastAngle = this.angle;
           lastT = now;
         }
         if (e.cancelable) e.preventDefault();
@@ -233,26 +247,24 @@
         if (!moved) return;
         this.lastInteract = performance.now();
 
-        const p = Math.abs(this.angle) / 180;
-        const progress = dir === 1 ? p : 1 - p;
-
-        // 动量投射：松手速度决定"看起来会停在哪"
+        const p = Math.abs(this.angle - fromAngle) / Math.abs((toAngle - fromAngle) || 1);
         const projected = this.angle + vel * MOMENTUM;
-        const passesMid = dir === 1 ? projected < -95 : projected > -85;
-        const complete = progress > THRESHOLD || passesMid;
+        const passes = toAngle === -180 ? projected < -95 : projected > -85;
+        const complete = p > THRESHOLD || passes;
 
         if (complete) {
-          if (dir === 1) this._finishNext(vel);
-          else this._finishPrev(vel);
+          this._spring(this.angle, toAngle, vel, SPRING.flip, () => {
+            this.busy = false;
+            if (this.opts.onFlip) this.opts.onFlip(dir);
+            this._drainQueue();
+          });
         } else {
-          // 回弹：同样携带松手速度，纸会先顺着惯性走再弹回来
-          const target = dir === 1 ? 0 : -180;
-          this._spring(this.angle, target, vel, SPRING.settle, () => {
-            this._set(this.front, this._curHTML);
+          this._spring(this.angle, fromAngle, vel, SPRING.settle, () => {
+            this.leaf.classList.remove('to-left');
             this._set(this.back, '');
+            this._set(this.under, '');
             this._apply(0);
             this.busy = false;
-            this.setUnder('');
           });
         }
       };
@@ -265,47 +277,27 @@
 
     _prepare(dir) {
       if (dir === 1) {
+        this.leaf.classList.remove('to-left');
         const next = this.opts.getNextHTML ? this.opts.getNextHTML() : '';
         this._set(this.back, next);
-        this.setUnder(this.opts.getUnderHTML ? this.opts.getUnderHTML(1) : next);
+        this.setUnder(next);
         this._apply(0);
       } else {
         const prev = this.opts.getPrevHTML ? this.opts.getPrevHTML() : '';
-        this._set(this.back, this._curHTML);
-        this._set(this.front, prev);
-        this.setUnder(this.opts.getUnderHTML ? this.opts.getUnderHTML(-1) : prev);
-        this._apply(-180);
+        const prior = this.opts.getPriorHTML ? this.opts.getPriorHTML() : '';
+        if (this.spread) {
+          this.leaf.classList.add('to-left');
+          this._set(this.front, prev);
+          this._set(this.back, prev);
+          this._set(this.left, prior);
+          this._apply(0);
+        } else {
+          this.leaf.classList.remove('to-left');
+          this._set(this.back, this._curHTML);
+          this._set(this.front, prev);
+          this._apply(-180);
+        }
       }
-    }
-
-    _finishNext(vel) {
-      const next = this.opts.getNextHTML ? this.opts.getNextHTML() : '';
-      this._spring(this.angle, -180, vel, SPRING.flip, () => {
-        this._curHTML = next || '';
-        this._set(this.front, this._curHTML);
-        this._set(this.back, '');
-        this._apply(0);
-        this.busy = false;
-        this.opts.onFlip && this.opts.onFlip(1);
-        this._drainQueue();
-      });
-    }
-
-    _finishPrev(vel) {
-      const prev = this.opts.getPrevHTML ? this.opts.getPrevHTML() : '';
-      this._spring(this.angle, 0, vel, SPRING.flip, () => {
-        this._curHTML = prev || '';
-        this._set(this.back, '');
-        this.busy = false;
-        this.opts.onFlip && this.opts.onFlip(-1);
-        this._drainQueue();
-      });
-    }
-
-    /** 封面掀开：更大、更慢的弹簧 */
-    springCover(el, openCls, ms) {
-      el.classList.add(openCls);
-      return new Promise(r => setTimeout(r, ms || 620));
     }
   }
 
