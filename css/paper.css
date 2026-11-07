@@ -1597,6 +1597,7 @@ input, textarea { border: 0; background: none; outline: none; }
     0 30px 64px rgba(45, 35, 20, .24),
     0 6px 18px rgba(45, 35, 20, .13);
   background: var(--paper);
+  cursor: grab;
 }
 
 /* 左页（静态，显示上一页） */
@@ -1836,6 +1837,14 @@ input, textarea { border: 0; background: none; outline: none; }
   .sheet { padding: 26px 24px 32px 26px; }
   .pg-date { font-size: 18px; }
   .pg-fig { width: 52%; }
+}
+
+/* 拖动翻页时：禁止文本选择，光标变抓手 */
+body.dragging,
+body.dragging * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  cursor: grabbing !important;
 }
 
 /* ══════════ 响应式 ══════════ */

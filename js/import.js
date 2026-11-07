@@ -122,13 +122,19 @@
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, cv.width, cv.height);
 
-      // 渲染偶发不返回（pdf.js 内部消息丢失），超时后重试一次，实测可靠
-      const renderOnce = () =>
-        withTimeout(page.render({ canvasContext: ctx, viewport: vp }).promise, 40000, `渲染第 ${i} 页`);
+      // 渲染偶发不返回（pdf.js 内部消息丢失），超时后取消并重试一次
+      const renderOnce = () => {
+        const task = page.render({ canvasContext: ctx, viewport: vp });
+        return withTimeout(task.promise, 40000, `渲染第 ${i} 页`).catch((err) => {
+          try { task.cancel(); } catch (e) { /* ignore */ }
+          throw err;
+        });
+      };
       try {
         await renderOnce();
       } catch (err) {
         if (/超时/.test(err.message)) {
+          await new Promise(r => setTimeout(r, 120));   // 等上一次渲染彻底收尾
           ctx.fillStyle = '#fff';
           ctx.fillRect(0, 0, cv.width, cv.height);
           await renderOnce();

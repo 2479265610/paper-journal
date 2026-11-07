@@ -83,7 +83,11 @@
     setUnder(html) { this._set(this.under, html || ''); }
 
     _cancel() {
-      if (this.raf) { cancelAnimationFrame(this.raf); this.raf = null; }
+      if (this.raf) {
+        clearTimeout(this.raf);
+        cancelAnimationFrame(this.raf);
+        this.raf = null;
+      }
     }
 
     /** 纸面扫光：每次起翻触发一次 */
@@ -117,7 +121,11 @@
       let last = performance.now();
       let elapsed = 0;
 
-      const step = (now) => {
+      // 用 setTimeout 驱动而非 rAF：窗口不可见 / 后台时 rAF 会被 Chromium 暂停，
+      // 动画会永远停在半路、busy 卡住，之后所有翻页都会被拒。dt 仍按真实时间算，
+      // 所以即使定时器被节流，动画时长与终点依然正确。
+      const step = () => {
+        const now = performance.now();
         const dt = Math.min((now - last) / 1000, 1 / 30);
         last = now;
         elapsed += dt;
@@ -133,9 +141,9 @@
           cb && cb();
           return;
         }
-        this.raf = requestAnimationFrame(step);
+        this.raf = setTimeout(step, 16);
       };
-      this.raf = requestAnimationFrame(step);
+      this.raf = setTimeout(step, 16);
     }
 
     /* ── 下一页：纸从右翻到左 ── */
@@ -213,6 +221,7 @@
 
       const down = (e) => {
         if (this.busy) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;   // 只响应左键
         active = true; dir = 0; moved = false; vel = 0;
         startX = e.clientX; startY = e.clientY;
         span = this.spread ? (this.book.clientWidth / 2) : this.book.clientWidth;
@@ -237,6 +246,8 @@
           this.busy = true;
           fromAngle = (!this.spread && dir === -1) ? -180 : 0;
           toAngle = (!this.spread && dir === -1) ? 0 : -180;
+          // 拖动期间禁止选择文本（否则一拖就变成框选，手感全废）
+          document.body.classList.add('dragging');
           this._prepare(dir);
           this._sheen();
         }
@@ -256,6 +267,7 @@
       };
 
       const up = () => {
+        document.body.classList.remove('dragging');
         if (!active) return;
         active = false;
         if (!moved) return;

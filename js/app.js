@@ -1369,6 +1369,42 @@
     $('#btnImport').onclick = startImport;
     $('#btnImportSetting').onclick = startImport;
 
+    // 滚轮 / 触控板翻页：横滑直接翻；纵滚到页底（页顶）再继续才翻
+    let readWheelAt = 0;
+    const bookEl = $('#book');
+    bookEl.addEventListener('wheel', (ev) => {
+      if (S.view !== 'reader' || S.editing) return;
+      const now = Date.now();
+      const dx = ev.deltaX, dy = ev.deltaY;
+
+      // 横向手势（触控板双指横滑 / Shift+滚轮）
+      if (Math.abs(dx) > Math.abs(dy) * 1.2) {
+        ev.preventDefault();
+        if (now - readWheelAt < 300) return;
+        if (Math.abs(dx) < 6) return;
+        readWheelAt = now;
+        if (dx > 0) goPrev(); else goNext();
+        return;
+      }
+
+      // 纵向：只在内容已滚到边界时接管，避免和正文滚动打架
+      const sc = $('#leafFront');
+      if (!sc) return;
+      const atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 4;
+      const atTop = sc.scrollTop <= 2;
+      if (dy > 0 && atBottom) {
+        ev.preventDefault();
+        if (now - readWheelAt < 420) return;
+        readWheelAt = now;
+        goNext();
+      } else if (dy < 0 && atTop) {
+        ev.preventDefault();
+        if (now - readWheelAt < 420) return;
+        readWheelAt = now;
+        goPrev();
+      }
+    }, { passive: false });
+
     // 书架：滚轮 / 横向拖拽切换
     let wheelAt = 0;
     const stage = $('#viewShelf');
