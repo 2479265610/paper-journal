@@ -38,24 +38,60 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+const os = require('os');
+
 /* ── 便携数据目录：exe 旁边的 data/ ── */
-function setupPortableData() {
-  try {
-    const base = app.isPackaged
-      ? path.dirname(app.getPath('exe'))
-      : path.join(__dirname, '..');
-    const dataDir = path.join(base, 'data');
-    fs.mkdirSync(dataDir, { recursive: true });
-    fs.accessSync(dataDir, fs.constants.W_OK);   // 放在只读位置（如 Program Files）时回退默认
-    app.setPath('userData', dataDir);
-    app.setPath('sessionData', path.join(dataDir, 'session'));
-    return dataDir;
-  } catch (e) {
-    return app.getPath('userData');
-  }
+let DATA_DIR = null;
+
+function logTo(dir, msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(path.join(dir, 'app.log'), line); } catch (e) { /* ignore */ }
+  console.log('[desktop] ' + msg);
 }
 
-let DATA_DIR = '';
+/**
+ * 便携数据目录：数据放在 exe 旁边，拷走「exe + data」即搬走全部日记。
+ * 必须在 app ready 之前调用 —— ready 之后 Chromium 已锁定 userData，
+ * 再 setPath('userData') 会失败（数据就落到 %APPDATA%，便携承诺失效）。
+ */
+function setupPortableData() {
+  const base = app.isPackaged
+    ? (process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath))
+    : path.join(__dirname, '..');
+  const dataDir = path.join(base, 'data');
+
+  // 注意：这里在 app ready 之前执行，不能调用 app.getPath()（会抛错），
+  // 旧目录一律用环境变量拼。
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.accessSync(dataDir, fs.constants.W_OK);
+
+  // 从旧位置（%APPDATA%/PaperJournal）迁移一次
+  try {
+    const appData = process.env.APPDATA || '';
+    const legacy = appData ? path.join(appData, 'PaperJournal') : '';
+    const fresh = !fs.existsSync(path.join(dataDir, 'session', 'IndexedDB'));
+    if (fresh && legacy && fs.existsSync(path.join(legacy, 'IndexedDB'))) {
+      fs.cpSync(legacy, dataDir, { recursive: true, force: false, errorOnExist: false });
+      logTo(dataDir, '已从旧目录迁移数据：' + legacy);
+    }
+  } catch (e) {
+    logTo(dataDir, '迁移旧数据失败（不影响启动）：' + e.message);
+  }
+
+  app.setPath('userData', dataDir);
+  app.setPath('sessionData', path.join(dataDir, 'session'));
+  logTo(dataDir, `数据目录就绪：${dataDir}（packaged=${app.isPackaged}, ` +
+    `portable=${process.env.PORTABLE_EXECUTABLE_DIR || '-'}）`);
+  return dataDir;
+}
+
+try {
+  DATA_DIR = setupPortableData();
+} catch (e) {
+  console.error('[desktop] 便携数据目录不可用：' + e.message);
+  DATA_DIR = null;
+}
+
 let WEB_ROOT = '';
 
 function createWindow() {
@@ -305,7 +341,6 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    DATA_DIR = setupPortableData();
     WEB_ROOT = app.isPackaged ? path.join(__dirname, 'app') : path.join(__dirname, '..');
 
     protocol.handle('app', async (request) => {

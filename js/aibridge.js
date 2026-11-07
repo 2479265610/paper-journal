@@ -149,6 +149,20 @@
       };
     },
 
+    /** 清空所有日记本与网页书（本地维护用，谨慎） */
+    async 'db.reset'() {
+      const books = await Store.listBooks();
+      for (const b of books) {
+        if (b.kind === 'html') {
+          await Store.addRawTomb(b.id);
+          await Store.delRawFiles(b.id);
+        }
+        await Store.delBook(b.id);
+      }
+      changed();
+      return { ok: true, removed: books.length };
+    },
+
     async 'stats'() {
       const all = await Store.listEntries();
       const books = await Store.listBooks();
