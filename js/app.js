@@ -1423,7 +1423,10 @@
     $$('#segFont button').forEach(b => b.classList.toggle('on', b.dataset.v === S.cfg.font));
 
     const st = $('#syncState');
-    if (typeof window.PJNative !== 'undefined' && window.PJNative) {
+    if (typeof window.PJDesktop !== 'undefined' && window.PJDesktop && window.PJDesktop.isDesktop) {
+      st.className = 'sync-state ok';
+      st.textContent = '桌面版 · 同步经主进程直连 WebDAV，无需代理';
+    } else if (typeof window.PJNative !== 'undefined' && window.PJNative) {
       st.className = 'sync-state ok';
       st.textContent = '已启用原生通道（Android）· 直连 WebDAV，无需代理';
     } else if (!st.textContent || st.textContent === '') {
@@ -1434,11 +1437,17 @@
   async function loadStorageInfo() {
     const est = await Store.storageEstimate();
     const el = $('#storageInfo');
+    let txt = '';
     if (est) {
-      el.textContent = `已用 ${fmtBytes(est.usage)} / 可用约 ${fmtBytes(est.quota)}`;
-    } else {
-      el.textContent = '';
+      txt = `本机数据已用 ${fmtBytes(est.usage)}`;
     }
+    if (typeof window.PJDesktop !== 'undefined' && window.PJDesktop && window.PJDesktop.info) {
+      try {
+        const info = await window.PJDesktop.info();
+        txt += `\n数据目录（随软件走）：${info.dataDir}`;
+      } catch (e) { /* ignore */ }
+    }
+    el.textContent = txt;
   }
 
   function bindSettings() {

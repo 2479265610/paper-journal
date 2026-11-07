@@ -46,9 +46,21 @@
 
 ---
 
-## 三种用法
+## 四种用法
 
-### 1. 电脑端（推荐）
+### 0. Windows 桌面版（exe，数据随软件走）
+
+下载 `PaperJournal-Portable-x.x.x.exe`（Release → `windows`），双击即用，**不需要 Node**。
+
+- **便携模式**：所有数据存在 exe 旁边的 `data/` 文件夹里 —— 拷走「exe + data」= 搬走全部日记
+- 打包版内置 WebDAV 直连（主进程 IPC 代发），同样不受跨域限制
+- 想要安装版（开始菜单/桌面快捷方式）用 `PaperJournal-Setup-x.x.x.exe`
+- 未做代码签名，首次运行若 SmartScreen 拦截：点「更多信息 → 仍要运行」
+
+本地开发调试：`cd desktop && npm install && npm start`（需要 Node）；
+打包：`npm run dist`（产物在 `desktop/release/`）。
+
+### 1. 电脑端（网页版）
 
 ```bash
 node server.mjs        # 需要 Node 18+
@@ -64,7 +76,7 @@ Windows 直接双击 `start-windows.bat`。
 想让它像个独立软件：在 Chrome / Edge 里打开后点地址栏右侧的「安装」——
 会得到一个独立窗口、有自己图标、没有地址栏的桌面应用。手机上同理「添加到主屏幕」。
 
-### 2. 安卓端（APK）
+### 3. 安卓端（APK）
 
 仓库自带 GitHub Actions，**云端打包，本地不需要 JDK / Android SDK**。
 
@@ -75,9 +87,7 @@ Windows 直接双击 `start-windows.bat`。
 
 装好后：设置里填 WebDAV，安卓版走**原生通道**（OkHttp 代发请求），完全不受 CORS 限制，不需要代理。
 
-也支持直接装网页版：手机浏览器打开你的部署地址 → 菜单 → 添加到主屏幕。
-
-### 3. GitHub Pages（在线版）
+也支持直接装网页版：手机浏览器打开你的部署地址 → 菜单 → 添加到主屏幕。### 4. GitHub Pages（在线版）
 
 推送 `main` 后自动部署（`.github/workflows/pages.yml`）。
 在仓库 Settings → Pages 里把 Source 选成 GitHub Actions 即可。
@@ -118,11 +128,13 @@ paper-journal/
 │   └── app.js              视图路由、书写、附件、锁屏
 ├── server.mjs              零依赖静态服务 + WebDAV 代理
 ├── sw.js                   离线缓存
+├── desktop/                Electron 桌面壳（main.js / preload.js，便携数据模式）
 ├── android/                原生 WebView 壳（Gradle）
 ├── tools/
 │   ├── gen-icons.mjs       手写 PNG 编码生成全套图标
+│   ├── pre-build.mjs       桌面版打包预处理（生成图标 + 复制网页资源）
 │   └── selftest.js         页面自检（?selftest=1）
-└── .github/workflows/      云端构建 APK / 部署 Pages
+└── .github/workflows/      云端构建 exe / APK / 部署 Pages
 ```
 
 ---

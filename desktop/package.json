@@ -1,0 +1,49 @@
+{
+  "name": "paper-journal-desktop",
+  "productName": "PaperJournal",
+  "version": "1.0.0",
+  "description": "纸间 · 有纸张手感的日记本（桌面版）",
+  "main": "main.js",
+  "author": "2479265610",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "prebuild": "node ../tools/pre-build.mjs",
+    "dist": "npm run prebuild && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^31.7.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.paperjournal.app",
+    "productName": "PaperJournal",
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "."
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "app/**"
+    ],
+    "win": {
+      "icon": "app/icons/icon-512.png",
+      "target": [
+        { "target": "portable" },
+        { "target": "nsis" }
+      ]
+    },
+    "portable": {
+      "artifactName": "PaperJournal-Portable-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "PaperJournal-Setup-${version}.exe"
+    }
+  }
+}

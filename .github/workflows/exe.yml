@@ -1,0 +1,73 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'desktop/**'
+      - 'index.html'
+      - 'manifest.webmanifest'
+      - 'sw.js'
+      - 'js/**'
+      - 'css/**'
+      - 'icons/**'
+      - '.github/workflows/exe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Package Windows exe
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate icons (PNG not committed)
+        run: node tools/gen-icons.mjs
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: |
+          if (Test-Path package-lock.json) { npm ci } else { npm install }
+
+      - name: Build portable + installer
+        working-directory: desktop
+        run: npm run dist
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem desktop/release -Filter *.exe | Select-Object Name,Length
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper-journal-exe
+          path: desktop/release/*.exe
+          if-no-files-found: error
+
+      - name: Publish to Release (windows)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'windows' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Windows 版' }}
+          body: |
+            纸间 · Paper Journal（Windows）
+
+            - **PaperJournal-Portable-x.x.x.exe** 便携版：单文件，双击即用，数据存在 exe 旁的 data/ 文件夹
+            - **PaperJournal-Setup-x.x.x.exe** 安装版：一键安装
+            - 未做代码签名，首次运行若 SmartScreen 拦截，点「更多信息 → 仍要运行」
+          files: |
+            desktop/release/PaperJournal-Portable-*.exe
+            desktop/release/PaperJournal-Setup-*.exe
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}

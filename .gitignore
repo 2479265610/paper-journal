@@ -4,8 +4,17 @@ dist/
 .DS_Store
 Thumbs.db
 
+# 运行数据（开发模式数据目录 / 便携数据）不入库
+data/
+
 # PNG 图标由 tools/gen-icons.mjs 生成，不入库
 icons/*.png
+desktop/app/
+desktop/node_modules/
+desktop/release/
+desktop/release2/
+desktop/release3/
+desktop/data/
 
 # Android
 android/.gradle/

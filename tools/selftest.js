@@ -18,7 +18,12 @@
 
   function send() {
     report.errors = (window.__PJERR || []).slice(0, 12);
+    report.info.desktop = typeof window.PJDesktop !== 'undefined';
+    report.info.android = typeof window.PJNative !== 'undefined';
+    report.info.protocol = location.protocol;
     const payload = JSON.stringify(report);
+    // 无头/桌面环境下直接打到控制台，主进程可捕获
+    try { console.log('[SELFTEST]', payload); } catch (e) {}
     const url = '/__log?d=' + encodeURIComponent(payload);
     fetch(url).catch(() => {});
     // 同时写进标题，便于任何方式读取

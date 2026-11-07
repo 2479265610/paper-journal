@@ -15,8 +15,13 @@
   let nativeSeq = 0;
 
   const hasNative = () =>
-    typeof global.PJNative !== 'undefined' && global.PJNative &&
-    typeof global.PJNative.request === 'function';
+    (typeof global.PJNative !== 'undefined' && global.PJNative &&
+      typeof global.PJNative.request === 'function') ||
+    (typeof global.PJDesktop !== 'undefined' && global.PJDesktop &&
+      typeof global.PJDesktop.davRequest === 'function');
+
+  const isDesktop = () =>
+    typeof global.PJDesktop !== 'undefined' && !!global.PJDesktop.isDesktop;
 
   function b64ToBytes(b64) {
     const bin = atob(b64);
@@ -90,11 +95,14 @@
       return 'Basic ' + b64;
     },
 
-    /** 统一请求出口：原生壳走 JS 桥，浏览器走代理或直连 */
+    /** 统一请求出口：桌面走 IPC，安卓走 JS 桥，浏览器走代理或直连 */
     async _fetch(method, url, body, headers) {
       const h = Object.assign({}, headers || {});
       h['Authorization'] = this._auth();
 
+      if (isDesktop()) {
+        return this._desktopFetch(method, url, h, body);
+      }
       if (hasNative()) {
         return this._nativeFetch(method, url, h, body);
       }
@@ -118,6 +126,29 @@
         cache: 'no-store'
       });
       return res;
+    },
+
+    /** 桌面版（Electron）：主进程 IPC 代发，无 CORS */
+    async _desktopFetch(method, url, headers, body) {
+      let b64 = '';
+      if (body != null) {
+        let bytes;
+        if (typeof body === 'string') bytes = new TextEncoder().encode(body);
+        else if (typeof Blob !== 'undefined' && body instanceof Blob) {
+          bytes = new Uint8Array(await body.arrayBuffer());
+        } else if (body instanceof ArrayBuffer) bytes = new Uint8Array(body);
+        else bytes = new TextEncoder().encode(String(body));
+        b64 = bytesToB64(bytes);
+      }
+      const r = await global.PJDesktop.davRequest({
+        method, url,
+        headersJson: JSON.stringify(headers),
+        bodyB64: b64
+      });
+      if (!r) throw new Error('桌面桥无响应');
+      if (r.error) throw new Error(r.error);
+      const bytes = r.body ? b64ToBytes(r.body) : new Uint8Array(0);
+      return new NativeResponse(r.status, r.headers, bytes);
     },
 
     _nativeFetch(method, url, headers, body) {
