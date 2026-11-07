@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+
+# PNG 图标由 tools/gen-icons.mjs 生成，不入库
+icons/*.png
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+*.hprof
+*.apk
+*.keystore
+android/app/src/main/res/mipmap-*/

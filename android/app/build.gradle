@@ -1,0 +1,72 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ── 把仓库根目录的网页同步进 assets/www ──
+def webRoot = file("$projectDir/../..")
+
+tasks.register('syncWebAssets', Copy) {
+    from(webRoot) {
+        include 'index.html'
+        include 'manifest.webmanifest'
+        include 'sw.js'
+        include 'css/**'
+        include 'js/**'
+        include 'icons/**'
+    }
+    into layout.buildDirectory.dir('generatedAssets/www')
+}
+
+android {
+    namespace 'com.paperjournal.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.paperjournal.app"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+        resConfigs "zh", "en"
+    }
+
+    sourceSets {
+        main {
+            assets.srcDirs += layout.buildDirectory.dir('generatedAssets')
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            // 个人使用：用 debug 签名，装上就能用，无需自建 keystore
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packagingOptions {
+        resources.excludes += ['META-INF/*.kotlin_module', 'META-INF/DEPENDENCIES']
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.11.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
+
+tasks.named('preBuild').configure { dependsOn 'syncWebAssets' }

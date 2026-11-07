@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#efe9dd">
+<meta name="description" content="纸间 · Paper Journal —— 有纸张手感的本地优先日记本，支持 WebDAV 多端同步。">
+<title>纸间 · Paper Journal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/paper.css">
+<script>
+/* 运行时错误收集（诊断用，开销可忽略） */
+window.__PJERR = [];
+addEventListener('error', function (e) { window.__PJERR.push(String((e && e.message) || e)); });
+addEventListener('unhandledrejection', function (e) { window.__PJERR.push('promise: ' + String(e && e.reason)); });
+
+/* 调试/升级用：访问 ?reset=1 可清空 Service Worker 与全部缓存 */
+if (location.search.indexOf('reset') >= 0) {
+  try {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (rs) {
+        rs.forEach(function (r) { r.unregister(); });
+      });
+    }
+    if (window.caches) caches.keys().then(function (ks) { ks.forEach(function (k) { caches.delete(k); }); });
+  } catch (e) {}
+}
+</script>
+</head>
+<body>
+
+<div id="app" data-view="shelf" data-theme="paper">
+
+  <!-- ══════════ 顶栏 ══════════ -->
+  <header class="topbar">
+    <div class="tb-left">
+      <button class="icon-btn back" id="btnBack" aria-label="返回" hidden>
+        <svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="tb-title">
+        <h1 id="viewTitle">纸间</h1>
+        <p id="viewSub">正在翻开…</p>
+      </div>
+    </div>
+    <div class="tb-right">
+      <button class="icon-btn" id="btnSearch" aria-label="搜索">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <button class="icon-btn" id="btnTheme" aria-label="切换纸张">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 4.8a7.2 7.2 0 0 1 0 14.4z" fill="currentColor"/></svg>
+      </button>
+      <button class="icon-btn" id="btnSettings" aria-label="设置">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.2v2.2M12 18.6v2.2M4.7 7.8l1.9 1.1M17.4 15.1l1.9 1.1M4.7 16.2l1.9-1.1M17.4 8.9l1.9-1.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════ 1. 书架（3D Cover Flow） ══════════ -->
+  <section class="view" id="viewShelf">
+    <div class="shelf-stage">
+      <div class="flow-head">
+        <h2 class="flow-title" id="flowTitle">我的日记</h2>
+        <p class="flow-sub" id="flowSub">0 页</p>
+      </div>
+      <div class="flow" id="flowTrack"></div>
+      <div class="flow-dots" id="flowDots"></div>
+      <div class="flow-actions">
+        <button class="round-btn" id="btnBookMore" aria-label="更多">
+          <svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="18" cy="12" r="1.5" fill="currentColor"/></svg>
+        </button>
+        <button class="round-btn" id="btnBookDel" aria-label="删除本子">
+          <svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V5.5h4V7M8 7l1 12h6l1-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="round-btn accent" id="btnNewBook" aria-label="新建日记本">
+          <svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <p class="flow-hint" id="flowHint">左右滑动切换 · 点封面打开</p>
+    </div>
+  </section>
+
+  <!-- ══════════ 2. 阅读 / 书写 ══════════ -->
+  <section class="view" id="viewReader">
+    <div class="book" id="book">
+      <div class="book-spine"></div>
+      <div class="page-under" id="pageUnder"></div>
+      <div class="leaf" id="leaf">
+        <div class="leaf-face leaf-front" id="leafFront"></div>
+        <div class="leaf-face leaf-back" id="leafBack"></div>
+      </div>
+      <div class="flip-shadow" id="flipShadow"></div>
+      <div class="corner" id="corner"></div>
+
+      <!-- 书本封面：点开时绕书脊掀起 -->
+      <div class="book-cover" id="bookCover" hidden>
+        <div class="bcv-face">
+          <span class="bcv-kicker">PAPER JOURNAL</span>
+          <h2 class="bcv-title" id="bcvTitle">我的日记</h2>
+          <span class="bcv-foot" id="bcvFoot"></span>
+        </div>
+        <div class="bcv-edge"></div>
+      </div>
+
+      <!-- 左右边缘点击热区 -->
+      <button class="edge-zone left" id="edgePrev" aria-label="上一页"></button>
+      <button class="edge-zone right" id="edgeNext" aria-label="下一页"></button>
+    </div>
+
+    <nav class="pager" id="pager">
+      <button class="pg-btn" id="btnPrev" aria-label="上一页">
+        <svg viewBox="0 0 24 24"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="pg-mid">
+        <span id="pageIndicator">1 / 1</span>
+        <span class="pg-dot" id="pgDot"></span>
+      </div>
+      <button class="pg-btn" id="btnNext" aria-label="下一页">
+        <svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </nav>
+  </section>
+
+  <!-- ══════════ 3. 时间轴 ══════════ -->
+  <section class="view" id="viewTimeline">
+    <div class="timeline" id="timeline"></div>
+  </section>
+
+  <!-- ══════════ 4. 日历 ══════════ -->
+  <section class="view" id="viewCalendar">
+    <div class="cal-head">
+      <button class="icon-btn" id="calPrev">
+        <svg viewBox="0 0 24 24"><path d="M14 6 8 12l6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+      <span id="calLabel">2026 年 11 月</span>
+      <button class="icon-btn" id="calNext">
+        <svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <div class="cal-week" id="calWeek"></div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-foot">
+      <div class="legend"><i class="lg-dot"></i> 有记录的日子</div>
+      <div class="cal-streak" id="calStreak"></div>
+    </div>
+  </section>
+
+  <!-- ══════════ 5. 相册 ══════════ -->
+  <section class="view" id="viewGallery">
+    <div class="gallery" id="gallery"></div>
+  </section>
+
+  <!-- ══════════ 6. 搜索 ══════════ -->
+  <section class="view" id="viewSearch">
+    <div class="search-bar">
+      <svg viewBox="0 0 24 24" class="sb-ico"><circle cx="11" cy="11" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <input id="searchInput" type="search" placeholder="搜索文字、标签、心情…" autocomplete="off">
+      <button class="icon-btn" id="searchClear" hidden>×</button>
+    </div>
+    <div class="tag-cloud" id="tagCloud"></div>
+    <div class="search-result" id="searchResult"></div>
+  </section>
+
+  <!-- ══════════ 底部导航 ══════════ -->
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="shelf" class="tab active">
+      <svg viewBox="0 0 24 24"><path d="M4 5.5h6v14H4zM14 5.5h6v14h-6z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+      <span>书架</span>
+    </button>
+    <button data-tab="timeline" class="tab">
+      <svg viewBox="0 0 24 24"><path d="M6 7h12M6 12h12M6 17h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>时间轴</span>
+    </button>
+    <button data-tab="calendar" class="tab">
+      <svg viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 9.5h16M8 3.8v3M16 3.8v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <span>日历</span>
+    </button>
+    <button data-tab="gallery" class="tab">
+      <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="9" cy="10" r="1.6" fill="currentColor"/><path d="m5.5 17 4.5-4.5 3 3 2.5-2.5 3 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      <span>相册</span>
+    </button>
+  </nav>
+
+  <!-- ══════════ 书写工具条 ══════════ -->
+  <div class="writer-bar" id="writerBar" hidden>
+    <div class="wb-row">
+      <button data-md="bold" title="粗体"><b>B</b></button>
+      <button data-md="italic" title="斜体"><i>I</i></button>
+      <button data-md="h2" title="小标题">H</button>
+      <button data-md="quote" title="引用">”</button>
+      <button data-md="ul" title="列表">⋯</button>
+      <span class="wb-sep"></span>
+      <button data-add="image" title="照片">照片</button>
+      <button data-add="video" title="视频">视频</button>
+      <button data-add="audio" title="录音">录音</button>
+      <button data-add="pdf" title="PDF">PDF</button>
+      <button data-add="html" title="网页/HTML">HTML</button>
+    </div>
+    <div class="wb-row wb-meta">
+      <button id="wbMood" class="chip">心情</button>
+      <button id="wbWeather" class="chip">天气</button>
+      <button id="wbTag" class="chip">标签</button>
+      <button id="wbStar" class="chip">★ 收藏</button>
+      <button id="wbDone" class="chip done">完成</button>
+    </div>
+  </div>
+
+  <!-- ══════════ 悬浮新建 ══════════ -->
+  <button class="fab" id="fabNew" aria-label="写今天的日记">
+    <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.4 2.4 0 0 0-3.4-3.4L4.6 16.6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15.4 6.4 17.6 8.6" stroke="currentColor" stroke-width="1.6"/></svg>
+  </button>
+
+  <!-- ══════════ 设置抽屉 ══════════ -->
+  <div class="sheet-mask" id="mask" hidden></div>
+  <aside class="drawer" id="drawer" hidden>
+    <div class="drawer-head">
+      <h2>设置</h2>
+      <button class="icon-btn" id="drawerClose">×</button>
+    </div>
+    <div class="drawer-body">
+
+      <details open>
+        <summary>外观</summary>
+        <div class="row">
+          <label>纸张</label>
+          <div class="seg" id="segTheme">
+            <button data-v="paper" class="on">米白</button>
+            <button data-v="kraft">牛皮</button>
+            <button data-v="ink">夜墨</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>字号</label>
+          <div class="seg" id="segFont">
+            <button data-v="s">小</button>
+            <button data-v="m" class="on">中</button>
+            <button data-v="l">大</button>
+          </div>
+        </div>
+        <div class="row">
+          <label>翻页音</label>
+          <label class="switch"><input type="checkbox" id="optSound" checked><i></i></label>
+        </div>
+        <div class="row">
+          <label>纸张纹理</label>
+          <label class="switch"><input type="checkbox" id="optGrain" checked><i></i></label>
+        </div>
+      </details>
+
+      <details open>
+        <summary>同步 · WebDAV</summary>
+        <div class="field"><label>服务器地址</label><input id="wdUrl" placeholder="https://dav.jianguoyun.com/dav/PaperJournal/" spellcheck="false"></div>
+        <div class="field"><label>账号</label><input id="wdUser" placeholder="邮箱 / 用户名" spellcheck="false"></div>
+        <div class="field"><label>应用密码</label><input id="wdPass" type="password" placeholder="WebDAV 专用密码"></div>
+        <div class="field"><label>跨域代理（可选）</label><input id="wdProxy" placeholder="http://127.0.0.1:8787/?url=" spellcheck="false"></div>
+        <p class="hint">浏览器直连 WebDAV 受跨域限制。若同步报 CORS 错误，运行 <code>node server.mjs</code> 后在上行填入代理地址；桌面版与安卓原生壳不受此限制。</p>
+        <div class="btn-row">
+          <button class="btn" id="btnTestDav">测试连接</button>
+          <button class="btn primary" id="btnSyncNow">立即同步</button>
+        </div>
+        <div class="sync-state" id="syncState">尚未同步</div>
+        <div class="row">
+          <label>自动同步</label>
+          <label class="switch"><input type="checkbox" id="optAutoSync"><i></i></label>
+        </div>
+      </details>
+
+      <details>
+        <summary>安全与数据</summary>
+        <div class="row">
+          <label>解锁密码</label>
+          <button class="btn sm" id="btnPin">设置 / 修改</button>
+        </div>
+        <div class="btn-row">
+          <button class="btn" id="btnExportJson">导出 JSON</button>
+          <button class="btn" id="btnExportMd">导出 Markdown</button>
+        </div>
+        <div class="row">
+          <label>回收站</label>
+          <button class="btn sm" id="btnTrash">查看</button>
+        </div>
+      </details>
+
+      <details>
+        <summary>关于</summary>
+        <p class="hint">纸间 v1.0 · 本地优先。数据默认只存在本机 IndexedDB，只有你点「同步」时才会上传到你自己的 WebDAV。</p>
+        <p class="hint" id="storageInfo"></p>
+      </details>
+    </div>
+  </aside>
+
+  <!-- ══════════ 全屏查看器 ══════════ -->
+  <div class="viewer" id="viewer" hidden>
+    <button class="viewer-close" id="viewerClose">×</button>
+    <div class="viewer-body" id="viewerBody"></div>
+  </div>
+
+  <!-- ══════════ 锁屏 ══════════ -->
+  <div class="lock" id="lock" hidden>
+    <div class="lock-inner">
+      <p class="lock-title">纸间</p>
+      <p class="lock-sub">输入 4 位密码</p>
+      <div class="lock-dots" id="lockDots"><i></i><i></i><i></i><i></i></div>
+      <div class="lock-pad" id="lockPad"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<input type="file" id="filePicker" hidden multiple accept="image/*,video/*,audio/*,application/pdf,text/html">
+
+<script src="js/util.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/store.js"></script>
+<script src="js/flip.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/app.js"></script>
+<script>
+/* 自检入口：?selftest=1 时把运行时状态回传服务器 */
+if (location.search.indexOf('selftest') >= 0) {
+  var st = document.createElement('script');
+  st.src = 'tools/selftest.js?t=' + Date.now();
+  document.body.appendChild(st);
+}
+</script>
+</body>
+</html>
