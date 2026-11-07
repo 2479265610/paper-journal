@@ -13,9 +13,11 @@
 **纸的部分**
 
 - 打开日记本时，封面绕书脊掀起（0.9s 缓动），配一声纸响
-- 翻页：拖拽跟手 / 点纸张左右边缘 / 点右下卷角 / 键盘 ← →
-- 翻动过程中纸面有明暗变化、投影随角度加深、翻过去背面的内容自然透出
+- **双页摊开**：左页是上一篇、右页是当前这篇，纸绕中缝翻转
+- 翻页四种方式：拖拽跟手 / 滚轮或触控板横滑 / 鼠标拖 / 点书页外侧的「‹ 上一页 / 下一页 ›」
+- 翻动过程中纸面有一道扫光、投影随角度加深、翻过去背面的内容自然透出
 - 纸张摩擦声由 Web Audio 实时合成，没有一个音频文件
+- 书架：竖排书名的封面（内框虚线、四角花草、底部草地摇曳）、书本悬浮呼吸、影子随浮沉缩放
 - 三套纸：米白、牛皮、夜墨；可关掉纹理和音效
 
 **日记的部分**
@@ -23,6 +25,9 @@
 | 能力 | 说明 |
 | --- | --- |
 | 内容形态 | 文字（富文本）、照片、视频、录音、PDF、**HTML 网页** |
+| 阅读 / 书写 | 默认只读；点右上角的笔才进入书写（Ctrl/⌘+E 同效） |
+| 页内排版 | 日期 + 星期/天气/字数胶囊、段首缩进、34% 宽表情包环绕正文 |
+| 照片 | 放在该篇末尾（等比、点击放大）；没有日期的照片归到「照片墙」整页 |
 | 组织 | 书架分本、时间轴、月历、相册、全文搜索 + 标签 |
 | 元信息 | 心情、天气、标签、收藏、字数、时间 |
 | 统计 | 连续记录天数、有记录的日子在日历上打点 |
@@ -30,6 +35,16 @@
 | 安全 | 4 位 PIN 锁 |
 | 数据 | 回收站（30 天）、JSON / Markdown 导出、自动草稿 |
 | 离线 | Service Worker，断网照常用 |
+| AI（MCP） | 接入 MCP 客户端后，AI 可直接写/读/搜日记，并按内置写作规则写 |
+
+**导入**
+
+| 类型 | 结果 |
+| --- | --- |
+| PDF | 每一页渲染成图像，**一页 PDF = 一页日记**，装订成一本新书（带进度条） |
+| HTML 网站（可多选） | **原样成书**：文件存进库，Service Worker 提供虚拟文件系统，站内相对链接与动画全部照旧 |
+| 单个 HTML | 可选「原样成书」或「转成一篇日记」 |
+| Markdown 文件夹 | 读 `YYYY-MM-DD.md` + 图片，**按月自动装订**成「十月」「十一月」；未被引用的照片生成照片墙 |
 
 **同步的部分**
 
@@ -40,9 +55,37 @@
   manifest.json        索引（单点真相）
   entries/<id>.json    每篇独立文件
   media/<hash>.<ext>   附件，按内容哈希去重
+  raw/index.json       网页书总索引
+  raw/<书id>/          网页书的清单与文件
 ```
 
 增量同步：只传变化的条目和缺失的附件；两边同时改过的，**保留冲突副本**而不是覆盖。
+网页书按 SHA-256 逐文件比对，缺谁补谁；删除以墓碑跨设备传播（已删的书不会被别的设备同步复活）。
+
+---
+
+## 接入 AI（MCP）
+
+`mcp-server.mjs` 是一个零依赖的 stdio MCP 服务器，暴露 8 个工具：
+
+`get_diary_guide`、`write_diary`、`append_to_diary`、`list_books`、`list_entries`、`read_entry`、`search_diary`、`diary_stats`
+
+客户端配置（WorkBuddy / Claude Desktop / Cursor）：
+
+```json
+{
+  "mcpServers": {
+    "paper-journal": {
+      "command": "node",
+      "args": ["<仓库路径>/mcp-server.mjs"]
+    }
+  }
+}
+```
+
+架构：MCP → 本机 `127.0.0.1:8787/api/op` → 应用内 AI 桥（桌面走 IPC、网页走 SSE）→ IndexedDB。
+**纸间需要保持打开**——数据始终在本机，AI 走的是本机通道。
+写作规则写在 `diary-style.md`，可直接编辑；`get_diary_guide` 会把当前规则交给 AI。
 
 ---
 
@@ -118,21 +161,27 @@ Windows 直接双击 `start-windows.bat`。
 ```
 paper-journal/
 ├── index.html              单页应用
-├── css/paper.css           纸张视觉 + 3D 翻页 + 三套主题
+├── css/paper.css           纸张视觉 + 双页跨页 + 三套主题
 ├── js/
 │   ├── util.js             工具、富文本消毒、弹层
 │   ├── audio.js            纸声合成（Web Audio）
-│   ├── store.js            IndexedDB（条目 / 媒体 / 设置）
-│   ├── flip.js             3D 翻页引擎（拖拽 / 光影 / 回弹）
-│   ├── sync.js             WebDAV 增量同步 + 原生桥
-│   └── app.js              视图路由、书写、附件、锁屏
-├── server.mjs              零依赖静态服务 + WebDAV 代理
-├── sw.js                   离线缓存
-├── desktop/                Electron 桌面壳（main.js / preload.js，便携数据模式）
+│   ├── store.js            IndexedDB（条目 / 媒体 / 网页书文件 / 设置）
+│   ├── flip.js             3D 翻页引擎（中缝翻转 / 弹簧 / 拖拽 / 扫光）
+│   ├── sync.js             WebDAV 增量同步（含网页书）+ 原生桥
+│   ├── import.js           导入：PDF → 成书、HTML → 原样书、Markdown 文件夹 → 按月装订
+│   ├── aibridge.js         AI 桥（MCP 操作在本机的执行端）
+│   └── app.js              视图路由、读写模式、附件、锁屏
+├── mcp-server.mjs          零依赖 stdio MCP 服务器（8 个工具）
+├── diary-style.md          日记写作规则（可编辑，MCP 会交给 AI）
+├── server.mjs              零依赖静态服务 + WebDAV 代理 + AI 桥 SSE
+├── sw.js                   离线缓存 + 网页书虚拟文件系统（/raw/…）
+├── desktop/                Electron 桌面壳（便携数据、AI 桥、文件夹导入 IPC）
 ├── android/                原生 WebView 壳（Gradle）
 ├── tools/
 │   ├── gen-icons.mjs       手写 PNG 编码生成全套图标
 │   ├── pre-build.mjs       桌面版打包预处理（生成图标 + 复制网页资源）
+│   ├── make-sample-pdf.mjs 生成自检用样例 PDF
+│   ├── test-mcp.mjs        MCP 端到端测试
 │   └── selftest.js         页面自检（?selftest=1）
 └── .github/workflows/      云端构建 exe / APK / 部署 Pages
 ```
