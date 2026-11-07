@@ -158,6 +158,56 @@ input, textarea { border: 0; background: none; outline: none; }
 /* ══════════ 书架 · 3D Cover Flow ══════════ */
 #viewShelf { padding: 0; overflow: hidden; }
 
+/* 悬浮空间背景：底部光池 + 顶部天光，三主题各有氛围 */
+#viewShelf {
+  background:
+    radial-gradient(75% 40% at 50% 112%, rgba(255, 232, 190, .85), rgba(255, 232, 190, 0) 62%),
+    radial-gradient(130% 85% at 50% -22%, #fffef9 0%, #f5eeda 46%, #e9dfc4 100%);
+}
+#app[data-theme="kraft"] #viewShelf {
+  background:
+    radial-gradient(75% 40% at 50% 112%, rgba(255, 190, 126, .55), rgba(255, 190, 126, 0) 62%),
+    radial-gradient(130% 85% at 50% -22%, #f9ecd2 0%, #ecd2a6 50%, #ddb283 100%);
+}
+#app[data-theme="ink"] #viewShelf {
+  background:
+    radial-gradient(70% 38% at 50% 114%, rgba(104, 146, 199, .38), rgba(104, 146, 199, 0) 64%),
+    radial-gradient(135% 92% at 50% -25%, #2c3c58 0%, #223049 52%, #19243a 100%);
+}
+
+/* 光尘：缓缓上飘，悬浮感的一部分 */
+.dust {
+  position: absolute; inset: 0; z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dust i {
+  position: absolute; bottom: -12px;
+  width: 4px; height: 4px; border-radius: 50%;
+  background: var(--dust, rgba(206, 168, 96, .6));
+  filter: blur(.4px);
+  opacity: 0;
+  animation: dustRise linear infinite;
+}
+#app[data-theme="ink"] .dust i { --dust: rgba(160, 196, 240, .55); }
+#app[data-theme="kraft"] .dust i { --dust: rgba(214, 148, 82, .55); }
+.dust i:nth-child(1) { left: 8%;  animation-duration: 14s; }
+.dust i:nth-child(2) { left: 18%; animation-duration: 18s; animation-delay: 3s;  width: 3px; height: 3px; }
+.dust i:nth-child(3) { left: 30%; animation-duration: 12s; animation-delay: 6s; }
+.dust i:nth-child(4) { left: 41%; animation-duration: 20s; animation-delay: 1.5s; width: 2.5px; height: 2.5px; }
+.dust i:nth-child(5) { left: 55%; animation-duration: 16s; animation-delay: 8s; }
+.dust i:nth-child(6) { left: 66%; animation-duration: 13s; animation-delay: 4.5s; width: 3px; height: 3px; }
+.dust i:nth-child(7) { left: 76%; animation-duration: 19s; animation-delay: 10s; }
+.dust i:nth-child(8) { left: 86%; animation-duration: 15s; animation-delay: 2.5s; width: 2.5px; height: 2.5px; }
+.dust i:nth-child(9) { left: 93%; animation-duration: 21s; animation-delay: 7s; }
+.dust i:nth-child(10) { left: 63%; animation-duration: 17s; animation-delay: 12s; width: 2px; height: 2px; }
+@keyframes dustRise {
+  0%   { transform: translateY(0) translateX(0); opacity: 0; }
+  8%   { opacity: .55; }
+  60%  { transform: translateY(-46vh) translateX(14px); }
+  100% { transform: translateY(-72vh) translateX(-10px); opacity: 0; }
+}
+
 .shelf-stage {
   position: relative;
   flex: 1;
@@ -170,6 +220,7 @@ input, textarea { border: 0; background: none; outline: none; }
   perspective-origin: 50% 44%;
   user-select: none;
   -webkit-user-select: none;
+  z-index: 2;
 }
 /* 顶部氛围光：让书"浮"在空间里 */
 .shelf-stage::before {
@@ -200,13 +251,18 @@ input, textarea { border: 0; background: none; outline: none; }
   border-radius: 50%;
   background: radial-gradient(
     50% 100% at 50% 50%,
-    rgba(40, 32, 18, .18),
+    rgba(40, 32, 18, .14),
     transparent 72%
   );
-  filter: blur(6px);
+  filter: blur(7px);
   pointer-events: none;
   z-index: 0;
   transition: opacity .4s;
+  animation: stageBreath 5.6s ease-in-out infinite;
+}
+@keyframes stageBreath {
+  0%, 100% { opacity: 1; transform: translateX(-50%) scaleX(1); }
+  50%      { opacity: .72; transform: translateX(-50%) scaleX(.94); }
 }
 [data-theme="ink"] .shelf-stage::after { background: radial-gradient(50% 100% at 50% 50%, rgba(0,0,0,.5), transparent 72%); }
 
@@ -247,7 +303,8 @@ input, textarea { border: 0; background: none; outline: none; }
   transform-style: preserve-3d;
   will-change: transform;
   cursor: pointer;
-  overflow: hidden;
+  /* 悬浮：影子露出到书外，所以不能裁切 */
+  overflow: visible;
   box-shadow: 0 14px 34px rgba(50, 40, 25, .22), 0 3px 9px rgba(50, 40, 25, .13);
   transition:
     transform .58s cubic-bezier(.3, 1.06, .32, 1),
@@ -256,7 +313,28 @@ input, textarea { border: 0; background: none; outline: none; }
     filter .4s ease;
   backface-visibility: hidden;
 }
-.flow-item::before {
+
+/* 书的地面软影：与悬浮呼吸反相（书升影缩），每本与自己的浮沉同相 */
+.fi-shadow {
+  position: absolute;
+  left: 12%; right: 12%;
+  bottom: calc(var(--w) * -0.14);
+  height: calc(var(--w) * 0.11);
+  border-radius: 50%;
+  background: radial-gradient(50% 100% at 50% 50%, rgba(40, 30, 14, .3), rgba(40, 30, 14, 0) 72%);
+  filter: blur(5px);
+  animation: shadowBreath 5.6s ease-in-out infinite;
+  animation-delay: calc(var(--fd, 0s) + .6s);
+  pointer-events: none;
+  z-index: -1;
+}
+@keyframes shadowBreath {
+  0%, 100% { transform: scaleX(1); opacity: .75; }
+  50%      { transform: scaleX(.84); opacity: .42; }
+}
+
+/* 布纹（裁切在封面内） */
+.fi-face::before {
   content: "";
   position: absolute; inset: 0; z-index: 0; opacity: .5;
   background-image:
@@ -265,8 +343,9 @@ input, textarea { border: 0; background: none; outline: none; }
   mix-blend-mode: overlay;
   pointer-events: none;
 }
-.flow-item::after {
-  content: "";
+
+/* 书脊（封面内左侧） */
+.fi-spine {
   position: absolute; left: 0; top: 0; bottom: 0; width: 9px; z-index: 2;
   background: linear-gradient(90deg, rgba(0,0,0,.38), rgba(0,0,0,.1) 55%, rgba(255,255,255,.13));
   pointer-events: none;
@@ -297,11 +376,34 @@ input, textarea { border: 0; background: none; outline: none; }
   }
 }
 
-/* 封面浮入（入场时 JS 设置 animationDelay） */
-.fi-face { animation: faceIn .55s cubic-bezier(.2, .82, .25, 1) backwards; }
+/* 封面：入场浮入 → 之后进入悬浮呼吸（浮沉错相由 --fd 控制） */
+.fi-face {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: calc(var(--w) * .085) calc(var(--w) * .062) calc(var(--w) * .07) calc(var(--w) * .1);
+  color: #fdf8ee;
+  border-radius: inherit;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  animation:
+    faceIn .55s cubic-bezier(.2, .82, .25, 1) backwards,
+    floatY 5.6s ease-in-out infinite;
+  animation-delay:
+    var(--fd, 0s),
+    calc(var(--fd, 0s) + .6s);
+  will-change: transform;
+}
 @keyframes faceIn {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
+}
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(calc(var(--w) * -0.035)); }
 }
 
 /* 悬停扫光 */
@@ -325,16 +427,6 @@ input, textarea { border: 0; background: none; outline: none; }
   .flow-item:not(.active):hover { filter: brightness(1.09); }
 }
 
-.fi-face {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: calc(var(--w) * .085) calc(var(--w) * .062) calc(var(--w) * .07) calc(var(--w) * .1);
-  color: #fdf8ee;
-}
 .fi-title {
   font-family: var(--font-serif);
   font-size: calc(var(--w) * .075);

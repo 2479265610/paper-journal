@@ -212,14 +212,16 @@
       el.className = 'flow-item';
       el.dataset.id = b.id;
       el.style.background = COVERS[(b.cover || i) % COVERS.length];
-      el.innerHTML = `<div class="fi-face">
-        <div class="fi-title">${escapeHtml(b.title)}</div>
-        <div class="fi-bottom">
-          <span class="fi-count">${isHtml ? (b.fileCount || 0) + ' 个文件' : items.length + ' 页'}</span>
-          <span class="fi-date">${isHtml ? '网页书 · 原样' : (items.length ? relTime(items[0].updatedAt) : '空白本子')}</span>
-        </div>
-      </div>`;
-      el.querySelector('.fi-face').style.animationDelay = `${i * 55}ms`;
+      el.innerHTML = `<i class="fi-shadow" aria-hidden="true"></i>
+        <div class="fi-face">
+          <i class="fi-spine" aria-hidden="true"></i>
+          <div class="fi-title">${escapeHtml(b.title)}</div>
+          <div class="fi-bottom">
+            <span class="fi-count">${isHtml ? (b.fileCount || 0) + ' 个文件' : items.length + ' 页'}</span>
+            <span class="fi-date">${isHtml ? '网页书 · 原样' : (items.length ? relTime(items[0].updatedAt) : '空白本子')}</span>
+          </div>
+        </div>`;
+      el.style.setProperty('--fd', (-(i % 7) * 0.85).toFixed(2) + 's');
 
       el.addEventListener('click', () => {
         if (Date.now() - lastShelfDrag < 350) return;
