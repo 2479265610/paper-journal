@@ -32,6 +32,14 @@
   }
 
   async function run() {
+    // 心跳：把当前进度写进标题，便于无头环境定位卡点
+    const hb = setInterval(() => {
+      document.title = 'ST… ok=' + report.ok.length + ' fail=' + report.fail.length +
+        (report.info.heartbeat ? ' | ' + report.info.heartbeat : '');
+    }, 1500);
+    const beat = (tag) => { report.info.heartbeat = tag; };
+    window.__beat = beat;
+
     try {
       check('PJ 命名空间', !!window.PJ);
       check('Store 模块', !!(window.PJ && window.PJ.Store));
@@ -183,11 +191,50 @@
           fail('附件链路异常: ' + (err && err.message));
           report.errors.push(String(err && err.stack));
         }
+
+        /* ══ 文件导入：HTML → 一篇日记；PDF → 一本日记（每页 = 一页） ══ */
+        try {
+          const Store = window.PJ.Store;
+          const books0 = window.__PJ.S.books;
+
+          // HTML 导入
+          const fh = new File(
+            ['<html><head><title>导入自检</title></head><body><h1>大标题</h1><p>段落一</p><table><tr><th>列A</th><td>1</td></tr></table><img src="https://example.com/pic.png"><script>alert(1)<\/script></body></html>'],
+            '导入自检.html', { type: 'text/html' });
+          const rh = await window.PJ.Importer.importFiles(fh, { bookId: books0[0].id });
+          check('HTML 导入为日记', rh.type === 'entry');
+          check('HTML 标题自动提取', rh.entry.title === '导入自检', 'title=' + rh.entry.title);
+          check('HTML 表格保留', /<table/i.test(rh.entry.body));
+          check('HTML 图片保留', /<img/i.test(rh.entry.body));
+          check('HTML script 被剥除', !/<script/i.test(rh.entry.body));
+          await Store.purgeEntry(rh.entry.id);
+
+          // PDF 导入（2 页样例，pdf.js 真实渲染）
+          window.__beat && window.__beat('import:pdf-fetch');
+          const resp = await fetch('js/vendor/sample-2p.pdf');
+          const buf = await resp.arrayBuffer();
+          const fp = new File([buf], '自检课本.pdf', { type: 'application/pdf' });
+          window.__beat && window.__beat('import:pdf-convert');
+          const rp = await window.PJ.Importer.importFiles(fp, { nextCover: 1 });
+          window.__beat && window.__beat('import:pdf-done');
+          check('PDF 导入为一本日记', rp.type === 'book');
+          const pe = await Store.listEntries({ bookId: rp.bookId });
+          check('PDF 每页 = 一页日记（2 页）', pe.length === 2, 'len=' + pe.length);
+          const first = pe[pe.length - 1];   // 逆序数组末尾 = 第 1 页
+          check('PDF 页含整页图像', first.attachments.length === 1 && first.attachments[0].type === 'image');
+          for (const e of pe) await Store.purgeEntry(e.id);
+          await Store.delBook(rp.bookId);
+          check('PDF 导入测试已清理', (await Store.listBooks()).every(b => b.id !== rp.bookId));
+        } catch (err) {
+          fail('导入链路异常: ' + (err && err.message));
+          report.errors.push(String(err && err.stack));
+        }
       }
     } catch (e) {
       fail('运行异常: ' + (e && e.message));
       report.errors.push(String(e && e.stack));
     } finally {
+      clearInterval(hb);
       send();
     }
   }

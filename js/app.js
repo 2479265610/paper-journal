@@ -1119,6 +1119,35 @@
     $('#btnBookMore').onclick = renameBook;
     $('#btnBookDel').onclick = deleteBook;
 
+    // 导入：PDF → 一本新日记；HTML → 一篇新日记
+    const startImport = () => {
+      Sound.unlock();
+      PJ.Importer.onFile = (file) => {
+        PJ.Importer.importFiles(file, {
+          nextCover: S.books.length,
+          bookId: S.bookId || (S.books[0] && S.books[0].id)
+        }).then(async (r) => {
+          if (r.type === 'book') {
+            await refreshAll();
+            shelfIndex = Math.max(0, S.books.findIndex(b => b.id === r.bookId));
+            renderShelf();
+            toast(`已导入《${r.title}》· ${r.pages} 页`);
+            await openBook(r.bookId);
+          } else {
+            await refreshAll();
+            toast(`已导入为日记《${(r.entry.title || '网页').slice(0, 12)}》`);
+            await openEntry(r.entry);
+          }
+        }).catch((e) => {
+          console.warn('import fail', e);
+          toast('导入失败：' + (e.message || e).slice(0, 60));
+        });
+      };
+      PJ.Importer.pickImport();
+    };
+    $('#btnImport').onclick = startImport;
+    $('#btnImportSetting').onclick = startImport;
+
     // 书架：滚轮 / 横向拖拽切换
     let wheelAt = 0;
     const stage = $('#viewShelf');

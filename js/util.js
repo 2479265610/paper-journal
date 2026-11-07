@@ -64,8 +64,21 @@
   /* ── 富文本消毒：白名单 ── */
   const ALLOWED = new Set([
     'P', 'BR', 'B', 'STRONG', 'I', 'EM', 'U', 'S', 'STRIKE', 'DEL',
-    'H2', 'H3', 'H4', 'BLOCKQUOTE', 'UL', 'OL', 'LI', 'A', 'SPAN', 'DIV', 'CODE', 'PRE', 'HR'
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'UL', 'OL', 'LI',
+    'A', 'SPAN', 'DIV', 'CODE', 'PRE', 'HR',
+    'IMG', 'FIGURE', 'FIGCAPTION',
+    'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'TR', 'TD', 'TH', 'CAPTION'
   ]);
+
+  /* 各标签允许保留的属性（值还会再校验） */
+  const KEEP_ATTRS = {
+    IMG: ['src', 'alt', 'loading'],
+    A: ['href', 'target', 'rel'],
+    TD: ['colspan', 'rowspan'],
+    TH: ['colspan', 'rowspan'],
+    COL: ['span'],
+    COLGROUP: ['span']
+  };
 
   function sanitize(html) {
     if (!html) return '';
@@ -85,15 +98,27 @@
           n.remove();
           continue;
         }
-        // 清理属性
+        // 属性清理
+        const keep = KEEP_ATTRS[n.tagName] || [];
         for (const attr of Array.from(n.attributes)) {
           const name = attr.name.toLowerCase();
+          const val = attr.value || '';
+
+          if (n.tagName === 'IMG' && name === 'src') {
+            if (!/^(https?:\/\/|data:image\/)/i.test(val.trim())) { n.remove(); break; }
+            continue;   // 安全来源，保留
+          }
           if (n.tagName === 'A' && name === 'href') {
-            if (/^\s*(javascript|data):/i.test(attr.value)) n.removeAttribute(attr.name);
+            if (/^\s*(javascript|data):/i.test(val)) n.removeAttribute(attr.name);
             else { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
             continue;
           }
+          if (keep.includes(name)) continue;         // 白名单内的普通属性
           n.removeAttribute(attr.name);
+        }
+        if (n.tagName === 'IMG') {
+          n.setAttribute('loading', 'lazy');
+          n.setAttribute('alt', n.getAttribute('alt') || '');
         }
         walk(n);
       }

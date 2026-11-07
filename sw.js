@@ -10,7 +10,10 @@ const ASSETS = [
   './js/store.js',
   './js/flip.js',
   './js/sync.js',
+  './js/import.js',
   './js/app.js',
+  './js/vendor/pdf.min.js',
+  './js/vendor/pdf.worker.min.js',
   './manifest.webmanifest',
   './icons/icon.svg'
 ];
